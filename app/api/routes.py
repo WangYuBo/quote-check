@@ -61,6 +61,7 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 # ---------------------------------------------------------------------------
 
 _tasks: dict[str, dict] = {}
+_MAX_TASKS = 100
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +122,14 @@ async def _run_task(
         _tasks[task_id]["status"] = "error"
         _tasks[task_id]["error"] = f"校对过程发生未知错误：{exc}"
 
+    finally:
+        # 任务完成后清理上传文件，释放磁盘空间
+        for path_str in [manuscript_path] + [p[0] for p in source_paths]:
+            try:
+                Path(path_str).unlink(missing_ok=True)
+            except OSError:
+                pass
+
 
 # ---------------------------------------------------------------------------
 # Routes
@@ -176,6 +185,11 @@ async def proofread(
         original_filename = source.filename or f"source_{i}{source_suffix}"
         source_paths.append((str(source_path), source_suffix, original_filename))
         source_filenames.append(original_filename)
+
+    # --- Evict oldest task if at capacity ---
+    if len(_tasks) >= _MAX_TASKS:
+        oldest_id = min(_tasks, key=lambda k: _tasks[k].get("created_at", 0))
+        del _tasks[oldest_id]
 
     # --- Register task ---
     _tasks[task_id] = {

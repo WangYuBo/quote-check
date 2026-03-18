@@ -233,6 +233,30 @@ body {
   letter-spacing: 0.03em;
 }
 
+/* 文件计数 + 继续添加提示 */
+.drop-zone__add-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+  padding: 4px 0 8px;
+  width: 100%;
+  max-width: 280px;
+  justify-content: center;
+}
+
+.drop-zone__add-icon {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  min-height: 14px;
+  max-width: 14px;
+  max-height: 14px;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
 /* 已选文件信息 */
 .drop-zone__file-info {
   display: flex;
