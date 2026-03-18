@@ -103,13 +103,29 @@
   }
 
   function renderSourceFileList() {
+    // Remove any existing add-hint
+    var existingHint = els.dropZone2.querySelector('.drop-zone__add-hint');
+    if (existingHint) existingHint.remove();
+
     if (state.sourceFiles.length === 0) {
       els.fileInfo2.style.display = 'none';
       els.dropZone2.classList.remove('has-file');
       toggleDropZoneContent(els.dropZone2, false);
     } else {
       els.dropZone2.classList.add('has-file');
+      // Hide original large icon and text, but keep drop zone clickable
       toggleDropZoneContent(els.dropZone2, true);
+
+      // Insert add-hint before fileInfo2
+      var hint = document.createElement('div');
+      hint.className = 'drop-zone__add-hint';
+      hint.innerHTML =
+        '<svg viewBox="0 0 20 20" fill="currentColor" class="drop-zone__add-icon" width="14" height="14">' +
+          '<path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/>' +
+        '</svg>' +
+        '<span>已添加 ' + state.sourceFiles.length + ' 个参考文献 · 点击或拖拽继续添加</span>';
+      els.dropZone2.insertBefore(hint, els.fileInfo2);
+
       // Render list of source files inside fileInfo2
       var names = state.sourceFiles.map(function (f, i) {
         return '<span class="file-name" style="flex:1">' + escapeHtml(f.name) + ' (' + formatFileSize(f.size) + ')</span>' +
@@ -641,8 +657,15 @@
     });
 
     input.addEventListener('change', function () {
-      if (input.files && input.files[0]) {
-        handleFileSelect(input.files[0], slot);
+      if (input.files && input.files.length > 0) {
+        if (slot === 'source') {
+          // 参考原文支持多文件选择
+          Array.from(input.files).forEach(function (f) {
+            handleFileSelect(f, slot);
+          });
+        } else {
+          handleFileSelect(input.files[0], slot);
+        }
       }
     });
 

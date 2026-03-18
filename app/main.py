@@ -8,6 +8,7 @@ Start the development server:
 """
 
 import logging
+import time
 from pathlib import Path
 
 import uvicorn
@@ -64,9 +65,25 @@ else:
 app.include_router(router)
 
 # --- Ensure uploads directory exists at startup ---
+def _cleanup_old_uploads(upload_dir: Path, max_age_hours: int = 24) -> int:
+    """删除超过 max_age_hours 小时的上传文件，返回删除数量。"""
+    if not upload_dir.exists():
+        return 0
+    cutoff = time.time() - max_age_hours * 3600
+    deleted = 0
+    for f in upload_dir.iterdir():
+        if f.is_file() and f.stat().st_mtime < cutoff:
+            f.unlink(missing_ok=True)
+            deleted += 1
+    return deleted
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     settings.ensure_upload_dir()
+    deleted = _cleanup_old_uploads(settings.upload_dir)
+    if deleted:
+        logger.info("Cleaned up %d old upload files", deleted)
     logger.info(
         "Upload directory ready: %s",
         settings.upload_dir.resolve(),
