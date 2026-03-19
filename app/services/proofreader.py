@@ -195,6 +195,7 @@ async def _call_api(system_prompt: str, user_message: str, max_tokens: int = 409
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "Accept-Encoding": "gzip, deflate",  # 排除 brotli，避免解码失败
     }
     payload = {
         "model": MODEL_ID,
