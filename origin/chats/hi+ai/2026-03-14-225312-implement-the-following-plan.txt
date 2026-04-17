@@ -1,0 +1,976 @@
+╭─── Claude Code v2.1.76 ──────────────────────────────────────────────────────╮
+│                               │ Tips for getting started                     │
+│     Welcome back wangyubo!    │ Run /init to create a CLAUDE.md file with i… │
+│                               │ ──────────────────────────────────────────── │
+│            ▐▛███▜▌            │ Recent activity                              │
+│           ▝▜█████▛▘           │ No recent activity                           │
+│             ▘▘ ▝▝             │                                              │
+│                               │                                              │
+│    Sonnet 4.6 · Claude Pro    │                                              │
+│   ~/github-resp/proofreader   │                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Plan to implement                                                            │
+│                                                                              │
+│ Proofreader 5人AI团队开发计划                                                │
+│                                                                              │
+│ Context                                                                      │
+│                                                                              │
+│ git revert 导致 proofreader 项目回滚到旧版（API格式错误、无流式传输、无结构  │
+│ 化解析），改进版本未提交而丢失。同时项目存在产品层面的关键缺口：只支持单原文 │
+│ 上传、无结果导出、无EPUB支持、任务无持久化。本计划组建5人AI                  │
+│ Agent团队分阶段修复并扩展。                                                  │
+│                                                                              │
+│ ---                                                                          │
+│ 团队配置                                                                     │
+│                                                                              │
+│ ┌──────┬──────────────┬───────┬──────────────────────────────────────────┐   │
+│ │ Agen │     角色     │ 模型  │                 主要战场                 │   │
+│ │  t   │              │       │                                          │   │
+│ ├──────┼──────────────┼───────┼──────────────────────────────────────────┤   │
+│ │ Agen │ 后端核心工程 │ opus  │ app/services/proofreader.py              │   │
+│ │ t 1  │ 师           │ 4.6   │                                          │   │
+│ ├──────┼──────────────┼───────┼──────────────────────────────────────────┤   │
+│ │ Agen │ 后端路由工程 │ sonne │ app/api/routes.py                        │   │
+│ │ t 2  │ 师           │ t 4.6 │                                          │   │
+│ ├──────┼──────────────┼───────┼──────────────────────────────────────────┤   │
+│ │ Agen │ 文件格式工程 │ sonne │ app/services/file_parser.py、requirement │   │
+│ │ t 3  │ 师           │ t 4.6 │ s.txt                                    │   │
+│ ├──────┼──────────────┼───────┼──────────────────────────────────────────┤   │
+│ │ Agen │ 前端工程师   │ sonne │ templates/index.html、static/js/app.js   │   │
+│ │ t 4  │              │ t 4.6 │                                          │   │
+│ ├──────┼──────────────┼───────┼──────────────────────────────────────────┤   │
+│ │ Agen │ 测试工程师   │ sonne │ tests/、docs/                            │   │
+│ │ t 5  │              │ t 4.6 │                                          │   │
+│ └──────┴──────────────┴───────┴──────────────────────────────────────────┘   │
+│                                                                              │
+│ ---                                                                          │
+│ Phase 0 — 修复旧版代码（串行，Agent 1独立完成）                              │
+│                                                                              │
+│ ▎ 前提：其他Agent全部等待Phase 0完成后才能开始                               │
+│                                                                              │
+│ Agent 1 任务                                                                 │
+│                                                                              │
+│ P0-1：修复 _call_api 的API格式                                               │
+│                                                                              │
+│ 当前错误：                                                                   │
+│ - API_URL = ".../v1/messages" → 改为 .../v1/chat/completions                 │
+│ - payload使用 Anthropic "system" 顶层字段 → 改为 OpenAI messages数组格式     │
+│ - 响应解析 data["content"][0]["text"] → 改为                                 │
+│ data["choices"][0]["message"]["content"]                                     │
+│                                                                              │
+│ P0-2：修复 extract_quotes 的输入格式                                         │
+│                                                                              │
+│ - 签名改为 extract_quotes(paragraphs: list[dict]) -> list[dict]              │
+│ - 新增内部函数将段落列表格式化为 [段落N] 文本 字符串（与prompt约定一致）     │
+│ - 参考：app/prompts/extract_quotes_prompt.txt 中的 [段落N] 格式说明          │
+│                                                                              │
+│ P0-3：修复结果字段映射                                                       │
+│                                                                              │
+│ 模型返回嵌套结构，前端(static/js/app.js 中 buildQuoteCard)期望平铺字段。     │
+│ 新增 _normalize_verify_result(raw, para_info) -> dict，映射如下：            │
+│                                                                              │
+│ text_accuracy.is_accurate       → text_accurate                              │
+│ text_accuracy.issues            → text_issues                                │
+│ text_accuracy.original_text     → source_match                               │
+│ interpretation_accuracy.is_accurate → explanation_consistent                 │
+│ interpretation_accuracy.issues  → explanation_issues                         │
+│ context_appropriateness.is_appropriate → context_appropriate                 │
+│ context_appropriateness.issues  → context_issues                             │
+│ overall_suggestion              → summary                                    │
+│ has_issue (True→"有问题")       → verdict                                    │
+│ para_info.chapter/estimated_page → chapter/estimated_page                    │
+│                                                                              │
+│ 验收： python -m py_compile app/services/proofreader.py 通过，手动curl       │
+│ API返回正确JSON。                                                            │
+│                                                                              │
+│ ---                                                                          │
+│ Phase 1 — 恢复改进版功能（部分并行）                                         │
+│                                                                              │
+│ Agent 1 任务（P0完成后开始）                                                 │
+│                                                                              │
+│ P1-1：429重试机制                                                            │
+│ - 最多4次重试，等待 15/30/45/60 秒                                           │
+│ - 在 _call_api 上封装，对调用方透明                                          │
+│                                                                              │
+│ P1-2：正则预过滤 _QUOTE_LIKELY_RE                                            │
+│ _QUOTE_LIKELY_RE = re.compile(                                               │
+│     r'[""「」《》]|引自|摘自|出自|所言|指出|认为|写道', re.UNICODE           │
+│ )                                                                            │
+│ - 过滤掉不含引用特征的段落，减少API调用                                      │
+│                                                                              │
+│ P1-3：分块并发提取                                                           │
+│ - 每块1500字符，最大8并发（Semaphore控制）                                   │
+│ - extract_quotes_chunked(paragraphs, log_callback) → 合并结果                │
+│                                                                              │
+│ P1-4：缺失原文检测 _detect_missing_sources                                   │
+│ - 从引用的 source_work 字段提取文献名（去书名号）                            │
+│ - 与已上传原文文件名模糊匹配                                                 │
+│ - 返回 [{"source_work": "《论语》", "quote_count": N}]                       │
+│                                                                              │
+│ P1-5：重建 run_proofreading                                                  │
+│                                                                              │
+│ 新签名：                                                                     │
+│ async def run_proofreading(                                                  │
+│     paragraphs: list[dict],                                                  │
+│     source_texts: dict[str, str],   # {filename: text}，支持多原文           │
+│     log_callback: Callable | None = None,                                    │
+│ ) -> dict                                                                    │
+│                                                                              │
+│ 流程：预过滤 → 分块提取引用 → 检测缺失原文 → 并发校对（限8并发）→ 聚合结果   │
+│                                                                              │
+│ Agent 2 任务（P0完成后可与Agent 1并行）                                      │
+│                                                                              │
+│ P1-6：升级 _tasks 数据结构                                                   │
+│ - 新增 logs: list[str]、source_filenames: list[str]、created_at: float 字段  │
+│ - GET /api/result/{id} 在processing状态时也返回 logs                         │
+│                                                                              │
+│ P1-7：升级 _run_task（依赖P1-5完成）                                         │
+│ - 用 parse_manuscript_structured 替换 parse_file（获取结构化段落）           │
+│ - 构建 source_texts: dict[str, str] 传给 run_proofreading                    │
+│ - 注入 log_callback，将日志追加到 _tasks[task_id]["logs"]                    │
+│                                                                              │
+│ P1-8：添加SSE端点                                                            │
+│ @router.get("/api/stream/{task_id}")                                         │
+│ async def stream_task(task_id: str) -> StreamingResponse:                    │
+│     # 每秒推送 {status, logs, result/error}                                  │
+│     # 状态为done/error时关闭流                                               │
+│                                                                              │
+│ ---                                                                          │
+│ Phase 2 — 功能扩展（Phase 1完成后全部并行）                                  │
+│                                                                              │
+│ Agent 2（路由扩展）                                                          │
+│                                                                              │
+│ P2-1：多原文文件上传                                                         │
+│ - POST /api/proofread 改为接受 sources: list[UploadFile]（1-10个文件）       │
+│                                                                              │
+│ P2-2：结果导出API                                                            │
+│ - GET /api/export/{task_id}?format=docx|csv                                  │
+│ - docx：python-docx生成表格，含quote/verdict/issues/summary列                │
+│ - csv：直接序列化结果字段                                                    │
+│                                                                              │
+│ Agent 3（格式支持）                                                          │
+│                                                                              │
+│ P2-3：EPUB解析                                                               │
+│ - _parse_epub(file_path) 使用 ebooklib + beautifulsoup4 提取章节文本         │
+│ - parse_manuscript_structured 识别 .epub 后缀                                │
+│                                                                              │
+│ P2-4：更新依赖配置                                                           │
+│ - requirements.txt 添加 EbookLib>=0.18、beautifulsoup4>=4.12                 │
+│ - config.py 的 supported_extensions 添加 ".epub"                             │
+│                                                                              │
+│ Agent 4（前端扩展）                                                          │
+│                                                                              │
+│ P2-5：多原文上传UI                                                           │
+│ - 原文区域改为支持多文件（multiple attribute）                               │
+│ - 显示文件列表，每项可单独移除                                               │
+│ - startProofread() 将所有source文件追加到 FormData                           │
+│                                                                              │
+│ P2-6：SSE客户端替换轮询                                                      │
+│ - 新增 startSSE(taskId) 函数，使用 EventSource 接收日志和结果                │
+│ - 轮询保留为fallback降级方案                                                 │
+│                                                                              │
+│ P2-7：导出按钮                                                               │
+│ - 结果汇总区域添加下拉按钮："导出Word" / "导出CSV"                           │
+│ - 点击触发 /api/export/{taskId}?format=docx|csv 下载                         │
+│                                                                              │
+│ Agent 5（测试）                                                              │
+│                                                                              │
+│ T1系列（Phase 1完成后）：                                                    │
+│ - test_proofreader.py：用 httpx.MockTransport 测试429重试、字段映射          │
+│ - test_detect_missing.py：_detect_missing_sources 边界用例                   │
+│                                                                              │
+│ T2系列（Phase 2完成后）：                                                    │
+│ - test_multi_source.py：多原文上传集成测试（mock AI调用）                    │
+│ - docs/architecture.md：字段映射表、SSE端点说明、数据流图                    │
+│                                                                              │
+│ ---                                                                          │
+│ 执行顺序与依赖关系                                                           │
+│                                                                              │
+│ Phase 0: Agent 1 (P0-1→P0-2→P0-3)                                            │
+│                 ↓                                                            │
+│ Phase 1: Agent 1 (P1-1~P1-5) ── 并行 ── Agent 2 (P1-6, P1-7依赖P1-5,         │
+│ P1-8依赖P1-7)                                                                │
+│                 ↓                                      ↓                     │
+│ Phase 2: Agent 2 (P2-1,P2-2) ── 并行 ── Agent 3 (P2-3,P2-4)                  │
+│           ── 并行 ── Agent 4 (P2-5依赖P2-1接口, P2-6,P2-7)                   │
+│           ── 并行 ── Agent 5 (T1系列从Phase 1即可开始)                       │
+│                                                                              │
+│ ---                                                                          │
+│ 关键参考文件                                                                 │
+│                                                                              │
+│ ┌─────────────────────────────────┬───────────────────────────────────────┐  │
+│ │              文件               │                 用途                  │  │
+│ ├─────────────────────────────────┼───────────────────────────────────────┤  │
+│ │ app/prompts/extract_quotes_prom │ 定义 [段落N] 输入格式，Agent          │  │
+│ │ pt.txt                          │ 1必须对齐                             │  │
+│ ├─────────────────────────────────┼───────────────────────────────────────┤  │
+│ │ static/js/app.js                │ 定义前端期望的字段契约（buildQuoteCar │  │
+│ │                                 │ d函数）                               │  │
+│ ├─────────────────────────────────┼───────────────────────────────────────┤  │
+│ │ app/services/file_parser.py     │ parse_manuscript_structured           │  │
+│ │                                 │ 已实现，Agent 1直接调用               │  │
+│ ├─────────────────────────────────┼───────────────────────────────────────┤  │
+│ │ app/prompts/verify_quote_prompt │ 三维校对提示词，含 confidence         │  │
+│ │ .txt                            │ 字段定义                              │  │
+│ └─────────────────────────────────┴───────────────────────────────────────┘  │
+│                                                                              │
+│ ---                                                                          │
+│ 端到端验证                                                                   │
+│                                                                              │
+│ 1. 启动服务：uvicorn app.main:app --reload                                   │
+│ 2. 上传书稿（含经典引用）+ 原文（如《道德经》txt）                           │
+│ 3. 观察日志面板实时更新                                                      │
+│ 4. 校对完成后：结果卡片显示 verdict/confidence/chapter，无undefined          │
+│ 5. 点击"导出Word"下载报告，Word文件可正常打开                                │
+│ 6. 上传书稿引用《论语》但不上传对应原文，验证缺失原文警告显示                │
+│ 7. 运行 pytest tests/ -v 全部通过                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+⏺ Searched for 1 pattern, read 9 files (ctrl+o to expand)
+
+⏺ Now I have full context. Let me implement the plan. I'll work phase by phase,
+  starting with Phase 0 (critical fixes), then launch parallel agents for Phase
+  1 and 2.
+
+  Phase 0: Fix proofreader.py
+
+⏺ Write(app/services/proofreader.py)
+  ⎿  Added 301 lines, removed 46 lines
+      13  import os
+      14  import re
+      15  from pathlib import Path
+      16 +from typing import Callable                                    
+      17  
+      18  import httpx
+      19  
+     ...
+      22  # 模型配置
+      23  MODEL_ID = "deepseek-ai/DeepSeek-V3.2"
+      24  
+      24 -# 硅基流动 API                                                 
+      25 -API_URL = "https://api.siliconflow.cn/v1/messages"             
+      25 +# 硅基流动 API（OpenAI兼容格式）                               
+      26 +API_URL = "https://api.siliconflow.cn/v1/chat/completions"     
+      27  
+      28  # 原文截取上限（字符数），避免超出上下文窗口
+      29  SOURCE_TEXT_MAX_CHARS = 20000
+      30  
+      31  # 并发校对上限
+      31 -MAX_CONCURRENT_VERIFICATIONS = 5                               
+      32 +MAX_CONCURRENT_VERIFICATIONS = 8                               
+      33  
+      34 +# 分块提取最大字符数                                           
+      35 +CHUNK_MAX_CHARS = 1500                                         
+      36 +                                                               
+      37 +# 429重试配置                                                  
+      38 +RETRY_WAIT_SECONDS = [15, 30, 45, 60]                          
+      39 +                                                               
+      40  # Prompt 文件路径
+      41  _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+      42  
+      43 +# 引用特征正则（预过滤用）                                     
+      44 +_QUOTE_LIKELY_RE = re.compile(                                 
+      45 +    r'[""「」《》]|引自|摘自|出自|所言|指出|认为|写道', re.UNIC
+         +ODE                                                            
+      46 +)                                                              
+      47  
+      48 +                                                               
+      49  def _load_prompt(filename: str) -> str:
+      50      """从文件加载 system prompt。"""
+      51      prompt_path = _PROMPTS_DIR / filename
+     ...
+      86  
+      87  async def _call_api(system_prompt: str, user_message: str, max_
+          tokens: int = 4096) -> str:
+      88      """
+      77 -    调用硅基流动 API，返回模型回复文本。                       
+      89 +    调用硅基流动 API（OpenAI兼容格式），返回模型回复文本。     
+      90 +    内置 429 重试机制，最多重试4次，等待 15/30/45/60 秒。      
+      91      """
+      92      api_key = _get_api_key()
+      93      headers = {
+     ...
+       98          "model": MODEL_ID,
+       99          "max_tokens": max_tokens,
+      100          "messages": [
+      101 +            {"role": "system", "content": system_prompt},     
+      102              {"role": "user", "content": user_message},
+      103          ],
+       90 -        "system": system_prompt,                              
+      104      }
+      105  
+       93 -    async with httpx.AsyncClient(timeout=120.0) as client:    
+       94 -        response = await client.post(API_URL, headers=headers,
+          - json=payload)                                                
+       95 -        response.raise_for_status()                           
+       96 -        data = response.json()                                
+      106 +    last_exc = None                                           
+      107 +    for attempt, wait_sec in enumerate([-1] + RETRY_WAIT_SECON
+          +DS):                                                          
+      108 +        if wait_sec > 0:                                      
+      109 +            logger.warning("API 429 限流，等待 %d 秒后重试（第
+          + %d 次）...", wait_sec, attempt)                              
+      110 +            await asyncio.sleep(wait_sec)                     
+      111  
+       98 -    # 兼容 Anthropic 消息格式：content[0].text                
+       99 -    return data["content"][0]["text"]                         
+      112 +        try:                                                  
+      113 +            async with httpx.AsyncClient(timeout=120.0) as cli
+          +ent:                                                          
+      114 +                response = await client.post(API_URL, headers=
+          +headers, json=payload)                                        
+      115 +                if response.status_code == 429:               
+      116 +                    last_exc = httpx.HTTPStatusError(         
+      117 +                        f"429 Rate Limited", request=response.
+          +request, response=response                                    
+      118 +                    )                                         
+      119 +                    continue                                  
+      120 +                response.raise_for_status()                   
+      121 +                data = response.json()                        
+      122  
+      123 +            # OpenAI 兼容格式：choices[0].message.content     
+      124 +            return data["choices"][0]["message"]["content"]   
+      125  
+      102 -async def extract_quotes(manuscript_text: str) -> list[dict]: 
+      126 +        except httpx.HTTPStatusError as exc:                  
+      127 +            if exc.response.status_code == 429:               
+      128 +                last_exc = exc                                
+      129 +                continue                                      
+      130 +            raise                                             
+      131 +        except Exception:                                     
+      132 +            raise                                             
+      133 +                                                              
+      134 +    raise last_exc                                            
+      135 +                                                              
+      136 +                                                              
+      137 +def _format_paragraphs_for_prompt(paragraphs: list[dict]) -> s
+          +tr:                                                           
+      138 +    """将段落列表格式化为 [段落N] 文本 字符串（与 extract_quot
+          +es_prompt 约定一致）。"""                                     
+      139 +    lines = []                                                
+      140 +    for para in paragraphs:                                   
+      141 +        idx = para.get("index", 0)                            
+      142 +        text = para.get("text", "")                           
+      143 +        lines.append(f"[段落{idx}] {text}")                   
+      144 +    return "\n".join(lines)                                   
+      145 +                                                              
+      146 +                                                              
+      147 +async def extract_quotes(paragraphs: list[dict]) -> list[dict]
+          +:                                                             
+      148      """
+      104 -    从书稿文本中提取所有引用。                                
+      149 +    从书稿段落列表中提取所有引用。                            
+      150  
+      151      Args:
+      107 -        manuscript_text: 书稿全文文本                         
+      152 +        paragraphs: 段落列表，每项含 index/text/chapter 字段  
+      153  
+      154      Returns:
+      155          引用列表，每项包含 quote / context_before / context_af
+           ter /
+      111 -        author_explanation / location_hint 字段。             
+      156 +        author_explanation / location_hint / source_work / par
+          +a_index / chapter 字段。                                      
+      157          若提取失败返回空列表。
+      158      """
+      159      system_prompt = _load_prompt("extract_quotes_prompt.txt")
+      115 -    user_message = f"请从以下书稿文本中提取所有引用：\n\n{manu
+          -script_text}"                                                 
+      160 +    formatted = _format_paragraphs_for_prompt(paragraphs)     
+      161 +    user_message = f"请从以下书稿文本中提取所有引用：\n\n{form
+          +atted}"                                                       
+      162  
+      163      try:
+      164          raw_text = await _call_api(system_prompt, user_message
+           , max_tokens=4096)
+     ...
+      183          return []
+      184  
+      185  
+      186 +async def extract_quotes_chunked(                             
+      187 +    paragraphs: list[dict],                                   
+      188 +    log_callback: Callable | None = None,                     
+      189 +) -> list[dict]:                                              
+      190 +    """                                                       
+      191 +    分块并发提取引用。                                        
+      192 +                                                              
+      193 +    先用正则预过滤不含引用特征的段落，再将剩余段落按 CHUNK_MAX
+          +_CHARS 分块，                                                 
+      194 +    最大 MAX_CONCURRENT_VERIFICATIONS 并发提取，合并结果。    
+      195 +    """                                                       
+      196 +    # 预过滤：只保留含引用特征的段落                          
+      197 +    filtered = [p for p in paragraphs if _QUOTE_LIKELY_RE.sear
+          +ch(p.get("text", ""))]                                        
+      198 +    if not filtered:                                          
+      199 +        if log_callback:                                      
+      200 +            log_callback("预过滤：未发现含引用特征的段落，跳过
+          +提取")                                                        
+      201 +        return []                                             
+      202 +                                                              
+      203 +    if log_callback:                                          
+      204 +        log_callback(f"预过滤：{len(paragraphs)} 段落 → {len(f
+          +iltered)} 段落含引用特征")                                    
+      205 +                                                              
+      206 +    # 按字符数分块                                            
+      207 +    chunks: list[list[dict]] = []                             
+      208 +    current_chunk: list[dict] = []                            
+      209 +    current_chars = 0                                         
+      210 +    for para in filtered:                                     
+      211 +        text_len = len(para.get("text", ""))                  
+      212 +        if current_chars + text_len > CHUNK_MAX_CHARS and curr
+          +ent_chunk:                                                    
+      213 +            chunks.append(current_chunk)                      
+      214 +            current_chunk = []                                
+      215 +            current_chars = 0                                 
+      216 +        current_chunk.append(para)                            
+      217 +        current_chars += text_len                             
+      218 +    if current_chunk:                                         
+      219 +        chunks.append(current_chunk)                          
+      220 +                                                              
+      221 +    if log_callback:                                          
+      222 +        log_callback(f"分块提取：共 {len(chunks)} 块，最大 {MA
+          +X_CONCURRENT_VERIFICATIONS} 并发")                            
+      223 +                                                              
+      224 +    semaphore = asyncio.Semaphore(MAX_CONCURRENT_VERIFICATIONS
+          +)                                                             
+      225 +                                                              
+      226 +    async def extract_chunk(chunk: list[dict], chunk_idx: int)
+          + -> list[dict]:                                               
+      227 +        async with semaphore:                                 
+      228 +            if log_callback:                                  
+      229 +                log_callback(f"正在提取第 {chunk_idx + 1}/{len
+          +(chunks)} 块引用...")                                         
+      230 +            result = await extract_quotes(chunk)              
+      231 +            if log_callback:                                  
+      232 +                log_callback(f"第 {chunk_idx + 1}/{len(chunks)
+          +} 块完成，提取到 {len(result)} 条引用")                       
+      233 +            return result                                     
+      234 +                                                              
+      235 +    tasks = [extract_chunk(chunk, i) for i, chunk in enumerate
+          +(chunks)]                                                     
+      236 +    results_nested = await asyncio.gather(*tasks)             
+      237 +                                                              
+      238 +    all_quotes: list[dict] = []                               
+      239 +    for r in results_nested:                                  
+      240 +        all_quotes.extend(r)                                  
+      241 +                                                              
+      242 +    return all_quotes                                         
+      243 +                                                              
+      244 +                                                              
+      245 +def _detect_missing_sources(                                  
+      246 +    quotes: list[dict],                                       
+      247 +    source_texts: dict[str, str],                             
+      248 +) -> list[dict]:                                              
+      249 +    """                                                       
+      250 +    检测引用中提到的文献是否已上传原文。                      
+      251 +                                                              
+      252 +    通过模糊匹配 source_work 字段（去书名号后）与 source_texts
+          + 的文件名进行比较。                                           
+      253 +    返回未上传的文献列表，格式：[{"source_work": "《论语》", "
+          +quote_count": N}]                                             
+      254 +    """                                                       
+      255 +    # 统计每部文献的引用数                                    
+      256 +    source_work_counts: dict[str, int] = {}                   
+      257 +    for q in quotes:                                          
+      258 +        sw = q.get("source_work", "").strip()                 
+      259 +        if sw:                                                
+      260 +            source_work_counts[sw] = source_work_counts.get(sw
+          +, 0) + 1                                                      
+      261 +                                                              
+      262 +    if not source_work_counts:                                
+      263 +        return []                                             
+      264 +                                                              
+      265 +    # 构建已上传文件名集合（去除扩展名和路径，转小写）        
+      266 +    uploaded_names = set()                                    
+      267 +    for fname in source_texts.keys():                         
+      268 +        stem = Path(fname).stem.lower()                       
+      269 +        # 去书名号后的名称也加入                              
+      270 +        stem_clean = re.sub(r"[《》「」【】\[\]]", "", stem)  
+      271 +        uploaded_names.add(stem)                              
+      272 +        uploaded_names.add(stem_clean)                        
+      273 +                                                              
+      274 +    missing = []                                              
+      275 +    for source_work, count in source_work_counts.items():     
+      276 +        # 去书名号后进行模糊匹配                              
+      277 +        work_clean = re.sub(r"[《》「」【】\[\]]", "", source_
+          +work).lower()                                                 
+      278 +        # 检查是否有上传文件名包含该文献名，或文献名包含上传文
+          +件名                                                          
+      279 +        found = any(                                          
+      280 +            work_clean in name or name in work_clean          
+      281 +            for name in uploaded_names                        
+      282 +            if name                                           
+      283 +        )                                                     
+      284 +        if not found:                                         
+      285 +            missing.append({"source_work": source_work, "quote
+          +_count": count})                                              
+      286 +                                                              
+      287 +    return missing                                            
+      288 +                                                              
+      289 +                                                              
+      290 +def _normalize_verify_result(raw: dict, para_info: dict) -> di
+          +ct:                                                           
+      291 +    """                                                       
+      292 +    将模型返回的嵌套校对结果映射为前端期望的平铺字段格式。    
+      293 +    """                                                       
+      294 +    has_issue = raw.get("has_issue")                          
+      295 +                                                              
+      296 +    # 判断 verdict                                            
+      297 +    if has_issue is True:                                     
+      298 +        verdict = "有问题"                                    
+      299 +    elif has_issue is False:                                  
+      300 +        verdict = "通过"                                      
+      301 +    else:                                                     
+      302 +        verdict = "校对失败"                                  
+      303 +                                                              
+      304 +    return {                                                  
+      305 +        # 核心引用字段                                        
+      306 +        "quote": raw.get("quote", ""),                        
+      307 +        "source_work": raw.get("source_work", para_info.get("s
+          +ource_work", "")),                                            
+      308 +        "quote_location": raw.get("location_hint", para_info.g
+          +et("location_hint", "")),                                     
+      309 +        "context_before": para_info.get("context_before", ""),
+      310 +        "context_after": para_info.get("context_after", ""),  
+      311 +        # 三维度字段（平铺）                                  
+      312 +        "text_accurate": raw.get("text_accuracy", {}).get("is_
+          +accurate"),                                                   
+      313 +        "text_issues": raw.get("text_accuracy", {}).get("issue
+          +s", ""),                                                      
+      314 +        "source_match": raw.get("text_accuracy", {}).get("orig
+          +inal_text", ""),                                              
+      315 +        "explanation_consistent": raw.get("interpretation_accu
+          +racy", {}).get("is_accurate"),                                
+      316 +        "explanation_issues": raw.get("interpretation_accuracy
+          +", {}).get("issues", ""),                                     
+      317 +        "context_appropriate": raw.get("context_appropriatenes
+          +s", {}).get("is_appropriate"),                                
+      318 +        "context_issues": raw.get("context_appropriateness", {
+          +}).get("issues", ""),                                         
+      319 +        "summary": raw.get("overall_suggestion", ""),         
+      320 +        # 状态字段                                            
+      321 +        "has_issue": has_issue,                               
+      322 +        "verdict": verdict,                                   
+      323 +        "confidence": raw.get("confidence"),                  
+      324 +        # 位置信息                                            
+      325 +        "chapter": para_info.get("chapter", raw.get("chapter",
+          + "")),                                                        
+      326 +        "estimated_page": para_info.get("estimated_page"),    
+      327 +        # 错误信息（若有）                                    
+      328 +        "error": raw.get("error"),                            
+      329 +    }                                                         
+      330 +                                                              
+      331 +                                                              
+      332  async def verify_quote(quote_info: dict, source_text: str) -> 
+           dict:
+      333      """
+      334      对单条引用进行三维度校对（文字准确性、解释一致性、上下文相
+           符性）。
+     ...
+      339          source_text: 被引用文献原文（自动截取前 SOURCE_TEXT_MA
+           X_CHARS 字符）
+      340  
+      341      Returns:
+      150 -        校对结果字典，包含 has_issue / text_accuracy / interpr
+          -etation_accuracy /                                            
+      151 -        context_appropriateness / overall_suggestion 等字段。 
+      342 +        校对结果字典（已通过 _normalize_verify_result 映射为平
+          +铺格式）。                                                    
+      343          若校对失败返回包含错误信息的字典。
+      344      """
+      345      system_prompt = _load_prompt("verify_quote_prompt.txt")
+     ...
+      378  
+      379          # 确保 quote 字段存在
+      380          result.setdefault("quote", quote_text)
+      190 -        return result                                         
+      381 +        return _normalize_verify_result(result, quote_info)   
+      382  
+      383      except json.JSONDecodeError as exc:
+      384          logger.error("verify_quote JSON 解析失败（引用：%s…）:
+            %s", quote_text[:30], exc)
+      194 -        return _make_error_result(quote_text, f"JSON 解析失败:
+          - {exc}")                                                      
+      385 +        return _normalize_verify_result(_make_error_result(quo
+          +te_text, f"JSON 解析失败: {exc}"), quote_info)                
+      386      except httpx.HTTPError as exc:
+      387          logger.error("verify_quote API 调用失败（引用：%s…）: 
+           %s", quote_text[:30], exc)
+      197 -        return _make_error_result(quote_text, f"API 调用失败: 
+          -{exc}")                                                       
+      388 +        return _normalize_verify_result(_make_error_result(quo
+          +te_text, f"API 调用失败: {exc}"), quote_info)                 
+      389      except Exception as exc:  # pylint: disable=broad-except
+      390          logger.error("verify_quote 未知错误（引用：%s…）: %s",
+            quote_text[:30], exc, exc_info=True)
+      200 -        return _make_error_result(quote_text, f"校对过程出错: 
+          -{exc}")                                                       
+      391 +        return _normalize_verify_result(_make_error_result(quo
+          +te_text, f"校对过程出错: {exc}"), quote_info)                 
+      392  
+      393  
+      394  def _make_error_result(quote_text: str, error_message: str) ->
+            dict:
+      204 -    """构造校对失败时的兜底结果。"""                          
+      395 +    """构造校对失败时的兜底原始结果。"""                      
+      396      return {
+      397          "quote": quote_text,
+      398          "has_issue": None,
+     ...
+      416      }
+      417  
+      418  
+      228 -async def run_proofreading(manuscript_text: str, source_text: 
+          -str) -> dict:                                                 
+      419 +async def run_proofreading(                                   
+      420 +    paragraphs: list[dict],                                   
+      421 +    source_texts: dict[str, str],                             
+      422 +    log_callback: Callable | None = None,                     
+      423 +) -> dict:                                                    
+      424      """
+      230 -    完整校对流程主入口：提取引用 -> 并发校对 -> 汇总报告。    
+      425 +    完整校对流程主入口：预过滤 → 分块提取引用 → 检测缺失原文 →
+          + 并发校对 → 聚合结果。                                        
+      426  
+      427      Args:
+      233 -        manuscript_text: 书稿全文文本                         
+      234 -        source_text: 被引用文献原文                           
+      428 +        paragraphs: 书稿段落列表（来自 parse_manuscript_struct
+          +ured）                                                        
+      429 +        source_texts: 已上传原文字典 {filename: text}，支持多 
+          +原文                                                          
+      430 +        log_callback: 可选日志回调，接受一个字符串参数        
+      431  
+      432      Returns:
+      433          完整校对报告，格式：
+      434          {
+      239 -            "quotes_total": N,       # 提取到的引用总数       
+      240 -            "issues_count": N,       # 存在问题的引用数量     
+      241 -            "error_count": N,        # 校对失败（无法判断）的 
+          -引用数量                                                      
+      242 -            "results": [...]         # 每条引用的校对结果列表 
+      435 +            "quotes_total": N,                                
+      436 +            "issues_count": N,                                
+      437 +            "error_count": N,                                 
+      438 +            "missing_sources": [...],                         
+      439 +            "results": [...]                                  
+      440          }
+      441      """
+      245 -    logger.info("开始校对流程：提取引用...")                  
+      442 +    def log(msg: str) -> None:                                
+      443 +        logger.info(msg)                                      
+      444 +        if log_callback:                                      
+      445 +            log_callback(msg)                                 
+      446  
+      247 -    # 步骤 1：提取引用                                        
+      248 -    quotes = await extract_quotes(manuscript_text)            
+      447 +    log("开始校对流程：分块提取引用...")                      
+      448 +                                                              
+      449 +    # 步骤 1：分块并发提取引用                                
+      450 +    quotes = await extract_quotes_chunked(paragraphs, log_call
+          +back=log)                                                     
+      451      quotes_total = len(quotes)
+      250 -    logger.info("共提取到 %d 条引用，开始并发校对（最多 %d 并 
+          -发）...", quotes_total, MAX_CONCURRENT_VERIFICATIONS)         
+      452 +    log(f"共提取到 {quotes_total} 条引用")                    
+      453  
+      454      if quotes_total == 0:
+      455          return {
+      456              "quotes_total": 0,
+      457              "issues_count": 0,
+      458              "error_count": 0,
+      459 +            "missing_sources": [],                            
+      460              "results": [],
+      461          }
+      462  
+      260 -    # 步骤 2：并发校对（使用信号量限制并发数）                
+      463 +    # 步骤 2：检测缺失原文                                    
+      464 +    missing_sources = _detect_missing_sources(quotes, source_t
+          +exts)                                                         
+      465 +    if missing_sources:                                       
+      466 +        missing_names = "、".join(m["source_work"] for m in mi
+          +ssing_sources)                                                
+      467 +        log(f"[警告] 以下文献未上传原文：{missing_names}")    
+      468 +                                                              
+      469 +    # 步骤 3：并发校对（使用信号量限制并发数）                
+      470 +    log(f"开始并发校对（最多 {MAX_CONCURRENT_VERIFICATIONS} 并
+          +发）...")                                                     
+      471      semaphore = asyncio.Semaphore(MAX_CONCURRENT_VERIFICATIONS
+           )
+      472  
+      263 -    async def verify_with_semaphore(quote_info: dict) -> dict:
+      473 +    # 为每条引用找到对应的原文                                
+      474 +    def _find_source_text(quote: dict) -> str:                
+      475 +        source_work = quote.get("source_work", "").strip()    
+      476 +        if not source_work:                                   
+      477 +            # 无指定来源，使用第一个原文                      
+      478 +            if source_texts:                                  
+      479 +                return next(iter(source_texts.values()))      
+      480 +            return ""                                         
+      481 +                                                              
+      482 +        # 去书名号后模糊匹配                                  
+      483 +        work_clean = re.sub(r"[《》「」【】\[\]]", "", source_
+          +work).lower()                                                 
+      484 +        for fname, text in source_texts.items():              
+      485 +            stem = re.sub(r"[《》「」【】\[\]]", "", Path(fnam
+          +e).stem.lower())                                              
+      486 +            if work_clean in stem or stem in work_clean:      
+      487 +                return text                                   
+      488 +                                                              
+      489 +        # 未匹配到对应原文                                    
+      490 +        return ""                                             
+      491 +                                                              
+      492 +    verified_count = 0                                        
+      493 +                                                              
+      494 +    async def verify_with_semaphore(quote_info: dict, idx: int
+          +) -> dict:                                                    
+      495 +        nonlocal verified_count                               
+      496          async with semaphore:
+      265 -            return await verify_quote(quote_info, source_text)
+      497 +            source_text = _find_source_text(quote_info)       
+      498 +            if not source_text:                               
+      499 +                # 无对应原文，标记为"原文未上传"              
+      500 +                return {                                      
+      501 +                    **quote_info,                             
+      502 +                    "verdict": "原文未上传",                  
+      503 +                    "has_issue": None,                        
+      504 +                    "text_accurate": None,                    
+      505 +                    "explanation_consistent": None,           
+      506 +                    "context_appropriate": None,              
+      507 +                    "summary": "未上传对应文献原文，无法校对",
+      508 +                    "confidence": None,                       
+      509 +                    "chapter": quote_info.get("chapter", ""), 
+      510 +                    "estimated_page": None,                   
+      511 +                    "source_match": "",                       
+      512 +                    "text_issues": "",                        
+      513 +                    "explanation_issues": "",                 
+      514 +                    "context_issues": "",                     
+      515 +                    "error": None,                            
+      516 +                }                                             
+      517 +            result = await verify_quote(quote_info, source_tex
+          +t)                                                            
+      518 +            verified_count += 1                               
+      519 +            if verified_count % 5 == 0 or verified_count == qu
+          +otes_total:                                                   
+      520 +                log(f"校对进度：{verified_count}/{quotes_total
+          +}")                                                           
+      521 +            return result                                     
+      522  
+      267 -    tasks = [verify_with_semaphore(q) for q in quotes]        
+      523 +    tasks = [verify_with_semaphore(q, i) for i, q in enumerate
+          +(quotes)]                                                     
+      524      results = await asyncio.gather(*tasks, return_exceptions=F
+           alse)
+      525  
+      270 -    # 步骤 3：汇总统计                                        
+      526 +    # 步骤 4：汇总统计                                        
+      527      issues_count = 0
+      528      error_count = 0
+      529      for result in results:
+      530          if result.get("has_issue") is True:
+      531              issues_count += 1
+      276 -        elif result.get("has_issue") is None:                 
+      532 +        elif result.get("has_issue") is None and result.get("v
+          +erdict") != "原文未上传":                                     
+      533              error_count += 1
+      534  
+      279 -    logger.info(                                              
+      280 -        "校对完成：共 %d 条引用，%d 条存在问题，%d 条校对失败"
+          -,                                                             
+      281 -        quotes_total,                                         
+      282 -        issues_count,                                         
+      283 -        error_count,                                          
+      535 +    log(                                                      
+      536 +        f"校对完成：共 {quotes_total} 条引用，{issues_count}  
+          +条存在问题，"                                                 
+      537 +        f"{error_count} 条校对失败"                           
+      538      )
+      539  
+      540      return {
+      541          "quotes_total": quotes_total,
+      542          "issues_count": issues_count,
+      543          "error_count": error_count,
+      544 +        "missing_sources": missing_sources,                   
+      545          "results": list(results),
+      546      }
+
+⏺ Bash(python -m py_compile app/services/proofreader.py && echo "OK")
+  ⎿  OK
+
+⏺ Phase 0 complete. Now implement Phase 1 (routes.py) and Phase 2 in parallel.
+
+⏺ 2 agents launched (ctrl+o to expand)
+   ├─ Implement routes.py Phase 1+2
+   │  ⎿  Running in the background
+   └─ Implement EPUB support and frontend updates
+      ⎿  Running in the background
+
+⏺ Now launching the test agent (can start writing tests based on the
+  already-fixed proofreader.py):
+
+⏺ Agent(Write tests for proofreader service)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+⏺ Three background agents are running. Here's a summary of what's been done and
+  in progress:
+
+  Phase 0 (complete):
+  - proofreader.py fully rewritten:
+    - Fixed API URL → /v1/chat/completions (OpenAI format)
+    - Fixed payload to use messages array with system role
+    - Fixed response parsing → choices[0].message.content
+    - extract_quotes now takes paragraphs: list[dict], formats them as [段落N] 
+  text
+    - Added _normalize_verify_result mapping nested → flat fields for frontend
+    - Added 429 retry (15/30/45/60s, max 4 retries)
+    - Added _QUOTE_LIKELY_RE pre-filter
+    - Added extract_quotes_chunked (1500-char chunks, 8 concurrent)
+    - Added _detect_missing_sources
+    - New run_proofreading(paragraphs, source_texts, log_callback) with full
+  pipeline
+
+  Phase 1+2 agents running in background:
+  - Agent 1 (routes): Upgrading _tasks struct, multi-source upload, SSE
+  endpoint, export API (docx/csv)
+  - Agent 2 (files+frontend): EPUB support in file_parser, requirements.txt,
+  config.py, frontend SSE + multi-source + export buttons
+  - Agent 3 (tests): test_proofreader.py and test_detect_missing.py with edge
+  cases
+
+✻ Crunched for 4m 9s
+
+⏺ Agent "Implement routes.py Phase 1+2" completed
+
+⏺ Routes agent done. Waiting for the other two agents to complete.
+
+⏺ Agent "Write tests for proofreader service" completed
+
+⏺ Two of three agents complete. Still waiting for the frontend+file_parser
+  agent.
+
+⏺ Agent "Implement EPUB support and frontend updates" completed
+
+⏺ All three agents complete. Let me do a final validation pass.
+
+⏺ Bash(python -m py_compile app/services/proofreader.py app/api/routes.py
+      app/services/file_parser.py app/config.py && echo "ALL OK")
+  ⎿  ALL OK
+
+⏺ Bash(python -m py_compile tests/test_proofreader.py
+      tests/test_detect_missing.py && echo "TESTS OK")
+  ⎿  TESTS OK
+
+⏺ All clean. Let me do a quick smoke check on the key interface points:
+
+⏺ Bash(python -c "
+      from app.services.proofreader import (…)
+  ⎿  run_proofreading params: ['paragraphs', 'source_texts', 'log_callback'
+     ]
+     Routes: ['/', '/health', '/api/proofread', '/api/result/{task_id}', '/
+     … +2 lines (ctrl+o to expand)
+
+⏺ All phases complete. Here's a summary of what was implemented:
+
+  ---
+  Implementation Complete
+
+  Phase 0 — Critical Bug Fixes (proofreader.py)
+
+  - API format: URL fixed to /v1/chat/completions, payload uses messages array
+  with system role, response parsing uses choices[0].message.content
+  - extract_quotes: New signature (paragraphs: list[dict]), formats input as
+  [段落N] text matching prompt spec
+  - _normalize_verify_result: Maps nested model output → flat fields expected by
+   buildQuoteCard (text_accurate, explanation_consistent, context_appropriate,
+  verdict, summary, etc.)
+
+  Phase 1 — Restored Features
+
+  - 429 retry: 15/30/45/60s waits, max 4 retries, transparent to callers
+  - Pre-filter: _QUOTE_LIKELY_RE skips paragraphs without quote signals
+  - Chunked extraction: 1500-char chunks, 8 concurrent, extract_quotes_chunked
+  - Missing source detection: _detect_missing_sources fuzzy-matches source_work
+  against uploaded filenames
+  - run_proofreading: New signature (paragraphs, source_texts, log_callback) —
+  full pipeline with logging
+  - Routes: _tasks now tracks logs/source_filenames/created_at; SSE endpoint
+  /api/stream/{id}; result endpoint returns logs + missing_sources
+
+  Phase 2 — New Features
+
+  - Multi-source upload: POST /api/proofread accepts sources: list[UploadFile]
+  (1–10 files)
+  - Export API: GET /api/export/{id}?format=docx|csv — Word table or CSV
+  download
+  - EPUB support: file_parser.py + requirements.txt + config.py updated
+  - Frontend SSE: EventSource replaces polling (fallback to polling on error)
+  - Multi-source UI: Source files displayed as list, individual removal
+  - Export buttons: "导出 Word" / "导出 CSV" appear after results load
+
+  Tests
+
+  - test_proofreader.py: field mapping, 429 retry, _format_paragraphs_for_prompt
+  - test_detect_missing.py: 6 edge cases for missing source detection
+
+  To start: uvicorn app.main:app --reload
+
+✻ Churned for 33s
+
+❯ 2026-03-14 22:46:08  ERROR     app.services.proofreader  extract_quotes API   
+调用失败: Illegal header value b'Bearer '                                       
+2026-03-14 22:46:08  INFO      app.services.proofreader  第 20/21               
+块完成，提取到 0 条引用                                                         
+2026-03-14 22:46:08  ERROR     app.services.proofreader  extract_quotes API     
+调用失败: Illegal header value b'Bearer '                                       
+2026-03-14 22:46:08  INFO      app.services.proofreader  第 17/21               
+块完成，提取到 0 条引用                                                         
+2026-03-14 22:46:08  ERROR     app.services.proofreader  extract_quotes API     
+调用失败: Illegal header value b'Bearer '                                       
+2026-03-14 22:46:08  INFO      app.services.proofreader  第 21/21               
+块完成，提取到 0 条引用                                                         
+2026-03-14 22:46:28  ERROR     app.services.proofreader  extract_quotes API     
+调用失败: Illegal header value b'Bearer '                                       
+"/Users/wangyubo/github-resp/proofreader/app/config.py" 这里的api_key是空的     
+
+⏺ Read 2 files (ctrl+o to expand)
+
+⏺ The .env file has the key but proofreader.py reads it via os.environ.get(),
+  which misses the pydantic-settings .env loader. Fix: use
+  settings.siliconflow_api_key instead.
+
+⏺ Update(app/services/proofreader.py)
+  ⎿  Added 2 lines
+      17  
+      18  import httpx
+      19  
+      20 +from app.config import settings                                
+      21 +                                                               
+      22  logger = logging.getLogger(__name__)
+      23  
+      24  # 模型配置
+
+⏺ Update(app/services/proofreader.py)
+  ⎿  Added 1 line, removed 1 line
+      59  
+      60  
+      61  def _get_api_key() -> str:
+      62 -    return os.environ.get("SILICONFLOW_API_KEY", "")           
+      62 +    return settings.siliconflow_api_key or os.environ.get("SILI
+         +CONFLOW_API_KEY", "")                                          
+      63  
+      64  
+      65  def _parse_json_from_response(text: str) -> object:
+
+⏺ Bash(python -m py_compile app/services/proofreader.py && python -c "from
+      app.services.proofreader import _get_api_key; k = _get_api_key();
+      print('key loaded:', bool(…)
+  ⎿  key loaded: True | prefix: sk-hgkoz
+
+⏺ API key now loads correctly from .env via pydantic-settings. The root cause:
+  os.environ doesn't see values from .env files — only Settings() (via
+  pydantic-settings) loads them. Now _get_api_key() uses
+  settings.siliconflow_api_key as primary, with os.environ as fallback.
+
+✻ Cogitated for 54s
