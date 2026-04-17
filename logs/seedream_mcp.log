@@ -1,28 +1,32 @@
-2026-03-13 15:59:53 | INFO     | seedream_mcp.utils.logging:setup_logging:107 - 日志系统初始化完成，级别: INFO
-2026-03-13 15:59:53 | INFO     | seedream_mcp.server:cli_main:351 - Seedream MCP 启动: %s (version %s)
-2026-03-13 15:59:53 | INFO     | logging:callHandlers:1706 - Processing request of type ListToolsRequest
-2026-03-13 15:59:53 | INFO     | logging:callHandlers:1706 - Processing request of type ListPromptsRequest
-2026-03-13 15:59:53 | INFO     | logging:callHandlers:1706 - Processing request of type ListResourcesRequest
-2026-03-14 08:21:54 | INFO     | seedream_mcp.utils.logging:setup_logging:107 - 日志系统初始化完成，级别: INFO
-2026-03-14 08:21:54 | INFO     | seedream_mcp.server:cli_main:351 - Seedream MCP 启动: %s (version %s)
-2026-03-14 08:21:54 | INFO     | logging:callHandlers:1706 - Processing request of type ListToolsRequest
-2026-03-14 08:21:54 | INFO     | logging:callHandlers:1706 - Processing request of type ListPromptsRequest
-2026-03-14 08:21:54 | INFO     | logging:callHandlers:1706 - Processing request of type ListResourcesRequest
-2026-03-14 08:34:14 | INFO     | seedream_mcp.utils.logging:setup_logging:107 - 日志系统初始化完成，级别: INFO
-2026-03-14 08:34:14 | INFO     | seedream_mcp.server:cli_main:351 - Seedream MCP 启动: %s (version %s)
-2026-03-14 08:34:14 | INFO     | logging:callHandlers:1706 - Processing request of type ListToolsRequest
-2026-03-14 08:34:14 | INFO     | logging:callHandlers:1706 - Processing request of type ListPromptsRequest
-2026-03-14 08:34:14 | INFO     | logging:callHandlers:1706 - Processing request of type ListResourcesRequest
-2026-03-18 15:25:41 | INFO     | seedream_mcp.utils.logging:setup_logging:107 - 日志系统初始化完成，级别: INFO
-2026-03-18 15:25:41 | INFO     | seedream_mcp.server:cli_main:357 - Seedream MCP 启动: %s (version %s)
-2026-03-18 15:25:41 | ERROR    | seedream_mcp.server:cli_main:371 - 服务器运行异常
-2026-03-18 15:28:03 | INFO     | seedream_mcp.utils.logging:setup_logging:107 - 日志系统初始化完成，级别: INFO
-2026-03-18 15:28:03 | INFO     | seedream_mcp.server:cli_main:357 - Seedream MCP 启动: %s (version %s)
-2026-03-18 15:28:03 | INFO     | logging:callHandlers:1706 - Processing request of type ListToolsRequest
-2026-03-18 15:28:03 | INFO     | logging:callHandlers:1706 - Processing request of type ListPromptsRequest
-2026-03-18 15:28:03 | INFO     | logging:callHandlers:1706 - Processing request of type ListResourcesRequest
-2026-03-19 10:42:31 | INFO     | seedream_mcp.utils.logging:setup_logging:107 - 日志系统初始化完成，级别: INFO
-2026-03-19 10:42:31 | INFO     | seedream_mcp.server:cli_main:357 - Seedream MCP 启动: %s (version %s)
-2026-03-19 10:42:31 | INFO     | logging:callHandlers:1706 - Processing request of type ListToolsRequest
-2026-03-19 10:42:31 | INFO     | logging:callHandlers:1706 - Processing request of type ListPromptsRequest
-2026-03-19 10:42:31 | INFO     | logging:callHandlers:1706 - Processing request of type ListResourcesRequest
+2026-01-25 17:02:03 | INFO     | seedream_mcp.utils.logging:setup_logging:97 - 日志系统初始化完成，级别: INFO
+2026-01-25 17:02:03 | INFO     | seedream_mcp.server:cli_main:423 - Seedream MCP 启动: %s (version %s)
+2026-01-25 17:02:03 | INFO     | logging:callHandlers:1706 - Processing request of type ListToolsRequest
+2026-01-25 17:02:03 | INFO     | logging:callHandlers:1706 - Processing request of type ListPromptsRequest
+2026-01-25 17:02:03 | INFO     | logging:callHandlers:1706 - Processing request of type ListResourcesRequest
+2026-01-25 17:02:10 | INFO     | seedream_mcp.utils.logging:setup_logging:97 - 日志系统初始化完成，级别: INFO
+2026-01-25 17:02:10 | INFO     | seedream_mcp.server:cli_main:423 - Seedream MCP 启动: %s (version %s)
+2026-01-25 17:02:10 | INFO     | logging:callHandlers:1706 - Processing request of type ListToolsRequest
+2026-01-25 17:02:10 | INFO     | logging:callHandlers:1706 - Processing request of type ListPromptsRequest
+2026-01-25 17:02:10 | INFO     | logging:callHandlers:1706 - Processing request of type ListResourcesRequest
+2026-02-19 21:52:50 | INFO     | seedream_mcp.utils.logging:setup_logging:107 - 日志系统初始化完成，级别: INFO
+2026-02-19 21:52:50 | INFO     | seedream_mcp.server:cli_main:351 - Seedream MCP 启动: %s (version %s)
+2026-02-19 21:52:50 | INFO     | logging:callHandlers:1706 - Processing request of type ListToolsRequest
+2026-02-19 21:52:50 | INFO     | logging:callHandlers:1706 - Processing request of type ListPromptsRequest
+2026-02-19 21:52:50 | INFO     | logging:callHandlers:1706 - Processing request of type ListResourcesRequest
+2026-02-20 10:49:20 | INFO     | seedream_mcp.utils.logging:setup_logging:107 - 日志系统初始化完成，级别: INFO
+2026-02-20 10:49:20 | INFO     | seedream_mcp.server:cli_main:351 - Seedream MCP 启动: %s (version %s)
+2026-02-20 10:49:20 | INFO     | logging:callHandlers:1706 - Processing request of type ListToolsRequest
+2026-02-20 10:49:20 | INFO     | logging:callHandlers:1706 - Processing request of type ListPromptsRequest
+2026-02-20 10:49:20 | INFO     | logging:callHandlers:1706 - Processing request of type ListResourcesRequest
+2026-04-17 08:52:14 | INFO     | seedream_mcp.utils.logging:setup_logging:107 - 日志系统初始化完成，级别: INFO
+2026-04-17 08:52:14 | INFO     | seedream_mcp.server:cli_main:357 - Seedream MCP 启动: %s (version %s)
+2026-04-17 08:52:14 | INFO     | logging:callHandlers:1744 - Processing request of type ListToolsRequest
+2026-04-17 08:52:14 | INFO     | logging:callHandlers:1744 - Processing request of type ListPromptsRequest
+2026-04-17 08:52:14 | INFO     | logging:callHandlers:1744 - Processing request of type ListResourcesRequest
+2026-04-17 08:52:14 | INFO     | logging:callHandlers:1744 - Processing request of type ListResourceTemplatesRequest
+2026-04-17 19:01:42 | INFO     | seedream_mcp.utils.logging:setup_logging:107 - 日志系统初始化完成，级别: INFO
+2026-04-17 19:01:42 | INFO     | seedream_mcp.server:cli_main:357 - Seedream MCP 启动: %s (version %s)
+2026-04-17 19:01:42 | INFO     | logging:callHandlers:1744 - Processing request of type ListToolsRequest
+2026-04-17 19:01:42 | INFO     | logging:callHandlers:1744 - Processing request of type ListPromptsRequest
+2026-04-17 19:01:42 | INFO     | logging:callHandlers:1744 - Processing request of type ListResourcesRequest
+2026-04-17 19:01:42 | INFO     | logging:callHandlers:1744 - Processing request of type ListResourceTemplatesRequest
