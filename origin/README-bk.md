@@ -114,7 +114,7 @@ curl "http://localhost:8000/api/export/{task_id}?format=csv" \
 ## 项目结构
 
 ```
-proofreader/
+quote-check/
 ├── app/
 │   ├── main.py              # FastAPI 入口
 │   ├── config.py            # 配置管理

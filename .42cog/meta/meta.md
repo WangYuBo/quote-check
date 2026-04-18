@@ -76,6 +76,8 @@
 - [ ] v1.0 (正式版本) —— 突破 20000 字符截取 + 原典语料库接口层 + 长任务队列
 - [ ] v2.0 (功能增强) —— 异文版本对比、批量 API、合规审计
 
+> 📋 **详细开发进度见 `.42cog/work/milestones.md`**（按只追加不改写原则记录，对应 real.md #7 "版本锁定"精神）
+
 ## 相关链接
 
 - 代码仓库: [quote-check](https://github.com/WangYuBo/quote-check)
