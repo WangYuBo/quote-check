@@ -1,0 +1,91 @@
+@import 'tailwindcss';
+
+/*
+ * 文史类引用校对软件 v1.0 — 全局样式
+ * 色板：UI 规约 §2.3（OKLCH）；B/C 皮肤：data-skin=B|C 切换
+ * 关键约束：
+ *   - verdict-notmatch 用冷灰蓝（非红），避免"错"的暗示（notes #5）
+ *   - verdict-variant 独立色轨，不并入 match/notmatch（real.md #4）
+ *   - rejected 用斜纹底纹 + 深灰，视觉隔离（notes #1）
+ */
+
+@theme inline {
+  /* 基础 */
+  --color-primary: oklch(0.48 0.08 215);
+  --color-primary-fg: oklch(0.98 0 0);
+  --color-bg: oklch(0.99 0 0);
+  --color-card: oklch(1 0 0);
+  --color-fg: oklch(0.15 0 0);
+  --color-fg-muted: oklch(0.5 0.01 250);
+  --color-border: oklch(0.9 0.005 250);
+
+  /* verdict 六色 */
+  --color-verdict-match: oklch(0.62 0.11 155);
+  --color-verdict-partial: oklch(0.7 0.13 85);
+  --color-verdict-notmatch: oklch(0.55 0.03 250);
+  --color-verdict-notfound: oklch(0.6 0.02 280);
+  --color-verdict-variant: oklch(0.6 0.13 240);
+  --color-rejected: oklch(0.5 0 0);
+
+  /* 状态 */
+  --color-warning: oklch(0.7 0.15 80);
+  --color-destructive: oklch(0.55 0.18 30);
+
+  /* B/C 皮肤强调色 */
+  --color-accent-b: oklch(0.4 0.02 60);
+  --color-accent-c: oklch(0.72 0.08 95);
+
+  /* 字号 / 间距 */
+  --font-sans: 'Noto Sans SC', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Noto Serif SC', 'Source Han Serif SC', ui-serif, Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme inline {
+    --color-bg: oklch(0.15 0 0);
+    --color-card: oklch(0.2 0 0);
+    --color-fg: oklch(0.95 0 0);
+    --color-border: oklch(0.3 0.005 250);
+  }
+}
+
+/* B/C 皮肤切换（UI §2.3） */
+[data-skin='B'] {
+  --color-accent: var(--color-accent-b);
+}
+[data-skin='C'] {
+  --color-accent: var(--color-accent-c);
+}
+
+/* 审核拒绝斜纹底纹（UI §2.3 / notes #1） */
+.bg-rejected-wash {
+  background-image: repeating-linear-gradient(
+    45deg,
+    oklch(0.5 0 0 / 0.06),
+    oklch(0.5 0 0 / 0.06) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+/* 版本异文高亮（UI §2.3 / real.md #4） */
+.variant-highlight {
+  background-color: oklch(0.6 0.13 240 / 0.12);
+  border-bottom: 2px dotted var(--color-verdict-variant);
+}
+
+/* 全局基底 */
+html,
+body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-feature-settings: 'palt';
+}
+
+/* 长段文言正文：衬线优先 */
+.prose-classical {
+  font-family: var(--font-serif);
+  line-height: 1.85;
+}

@@ -1,4 +1,10 @@
-# 图书引用校对工具 — 系统架构说明
+> ⚠️ **本文件为 Python MVP（`origin/`）时期的历史归档，已不再代表当前架构**
+>
+> v1.0 起项目技术栈已转向 **TypeScript + Next.js 15 + Vercel + Inngest + Neon + Drizzle**，docker / FastAPI / Python 路线不再演进。权威架构见 [`.42cog/spec/spec-system-architecture.md`](../.42cog/spec/spec-system-architecture.md)。本文档保留仅为历史参考，请勿据此起开发任务。
+
+---
+
+# 图书引用校对工具 — 系统架构说明（MVP 历史归档）
 
 ## 1. 项目概述
 
