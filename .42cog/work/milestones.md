@@ -26,13 +26,15 @@ updated: 2026-04-19-v4
 
 ## 当前阶段
 
-**v1.0 执行阶段 · 脚手架就位 → 核心模块实装**
+**v1.0 执行阶段 · 数据层就位 → Inngest + Auth + AI 客户端**
 
 - 目标（对齐 meta.md）：突破 20000 字符截取 + 原典语料库接口层 + 长任务队列
 - 支撑文档：规约 v1.0-draft 共 9 份（`.42cog/spec/spec-*.md`）全部落地；产品、用户故事、系统架构、数据库、UI、编码、质量保障互相引用闭合
 - 已识别 MAS 故事：6 个正式 + 1 个后期候选（MAS-候选-7 留待后期）
-- **脚手架状态**：Next.js 15 + React 19 + Drizzle + Inngest + AI SDK + Better Auth + Zod + Pino + Tailwind v4 已装（574 包 / bun.lockb 已写）；typecheck / lint / format / env-sync 四检全绿；prompts/v1/ 三份冻结（extract 28c55aa6 / map dfdc27ad / verify 6117d149）
-- **下一步触发**：TDD-early 写合规测试骨架（prompt-integrity / moderation-detection / cjk-golden），再实装 lib/db/schema.ts（含 6 PG 触发器迁移）与 lib/ai/client.ts、lib/auth.ts 核心
+- **脚手架状态**：Next.js 15 + React 19 + Drizzle + Inngest + AI SDK + Better Auth + Zod + Pino + Tailwind v4 已装；typecheck / lint / format / env-sync 四检全绿；prompts/v1/ 三份冻结（extract 28c55aa6 / map dfdc27ad / verify 6117d149）
+- **合规基线**：TDD-early 43 测试（prompt-integrity 14 · moderation-detection 12 · cjk-golden 17）全绿；4 份核心 lib（prompts / moderation / normalize / variants）最小实装
+- **数据层基线**：lib/db/schema.ts（15 表 / 4 pgEnum + 1 varchar+CHECK 状态机 / 完整 relations） + lib/db/types.ts + lib/db/index.ts（Neon HTTP + drizzle）+ 0001_triggers.sql（6 触发器 + GIN / trigram 索引 + task.status CHECK + 监控视图 + 冷归档表）全部落位
+- **下一步触发**：(1) Neon 真实 DB 建分支后 `bun run db:generate` 产出 0000_init.sql 合并 0001_triggers.sql；(2) tests/contract/ 用 testcontainers-pg 跑 6 触发器契约测；(3) lib/auth.ts（Better Auth）与 lib/ai/client.ts（DeepSeek via siliconflow baseURL）同步起手
 
 ---
 
@@ -44,6 +46,8 @@ updated: 2026-04-19-v4
 
 ## 已完成（🟢）
 
+- `2026-04-19` | D | 🟢 | **v1.0 数据层落地**：lib/db/schema.ts 实装 15 张表（user / session / account / verification / manuscript / paragraph / quote / reference / task / verification_result / result_reference_hit / report_snapshot / audit_log / user_agreement_acceptance / prompt_version） + 4 pgEnum（user_role / reference_role / quote_kind / match_status）+ task.status 以 varchar+CHECK 承接（D-03a）+ 完整 relations；lib/db/types.ts 导出 15 组 T/NewT；lib/db/index.ts Neon HTTP 单例；lib/db/migrations/0001_triggers.sql 6 触发器（T-01 报告冻结 / T-02 版本戳冻结 / T-03 结果不可改 / T-04 audit_log append-only / T-05 协议 append-only / T-06 prompt_version 不可改） + I-01/I-02 GIN 索引（task.reference_ids / pg_trgm trigram） + C-03 status CHECK + M-01 监控视图 + M-02 冷归档表；typecheck / lint 全绿；43 合规测试仍全绿；contract 测试留待 testcontainers-pg 就位后 | `lib/db/{schema,types,index}.ts`, `lib/db/migrations/0001_triggers.sql`
+- `2026-04-19` | D | 🟢 | **TDD-early 合规基线**：3 文件 43 测试覆盖 prompt 冻结（14 · SHA256 / 禁忌判决词 / 营销话术 / verify 结构）、审核拒绝检测（12 · 9 fixture + 3 边界 · 200/4xx/Error 三签名）、CJK 规范化（17 · 黄金样本 / 异体等价 / 代理对安全 / OpenCC 乾坤回补）；最小 lib 实装 4 份（prompts / moderation / normalize / variants）；未走 mock 兜底，全部走真实 lib 调用 | `tests/compliance/*.test.ts`, `tests/fixtures/cjk-golden.ts`, `lib/ai/{prompts,moderation}.ts`, `lib/text/{normalize,variants}.ts`
 - `2026-04-19` | D | 🟢 | **v1.0 脚手架启动**：Next.js 15.1.6 + React 19 + Drizzle 0.36 + Inngest 3.27 + AI SDK 3.4 + Better Auth 0.7 + Tailwind v4 装机；tsconfig strict + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` + `verbatimModuleSyntax` 全开；ESLint flat config（含 `no-restricted-imports` 禁 `@ai-sdk/openai`/`bcrypt`/`next/router`）；Pino redact + env.ts Zod 校验 + env-sync 脚本 + prompt-frozen 脚本；typecheck / lint / format / env-sync 四检全绿；prompts/v1/ 三份冻结（SHA256 已记录）；eslint-config-next 旧格式 PATCH 暂移除（Next 16 稳定 flat config 后补） | `quote-check/{package.json,tsconfig.json,next.config.ts,drizzle.config.ts,eslint.config.mjs,app/*,lib/env.ts,scripts/*}`
 - `2026-04-19` | M | 🟢 | **v1.0 规约链闭合（0→9）**：meta + cog + real + 产品 + 用户故事 + 系统架构 + 数据库 + UI + 编码 + 质量保障 全部交付；所有硬约束已映射到可验证单元；下游切入执行阶段（脚手架 + 按 MAS 故事实装） | `.42cog/spec/*.md`
 - `2026-04-19` | D | 🟢 | v1.0 质量保障规约完成（金字塔 50/30/20 + 合规测试独立分层 9 项 + PG 6 触发器契约测 + Inngest 幂等测 + 110 视觉基线 + 16 项 CI 门禁 + 10 条盲区披露），合规红线无临时跳过通道 | `.42cog/spec/spec-quality-assurance.md`
