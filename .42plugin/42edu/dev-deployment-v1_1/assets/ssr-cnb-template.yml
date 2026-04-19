@@ -1,0 +1,33 @@
+# EdgeOne Pages CNB 配置 - SSR 项目
+# 参考文档: https://pages.edgeone.ai/zh/document/using-cnb-plugin
+#
+# 使用说明:
+# 1. 将 imports URL 替换为你的密钥仓库链接
+# 2. 在密钥仓库中设置 EDGEONE_API_TOKEN
+# 3. 将 <project-name> 替换为你的 EdgeOne 项目名
+# 4. 区域选择: 删除 -a overseas 则使用 global（包含中国节点）
+# 5. 重要: 首次部署后请在 EdgeOne 控制台配置环境变量
+#
+# 密钥仓库创建指引: https://docs.cnb.cool/zh/repo/secret.html
+
+master:
+  push:
+    - imports:
+        - https://cnb.cool/[user]/[repo]/-/blob/main/envs.yml
+
+      # 文件过滤: 仅当以下文件变更时触发构建
+      # 参考: https://docs.cnb.cool/zh/build/grammar.html
+      ifModify:
+        - "src/**/*"
+        - ".cnb.yml"
+        - "functions/**/*"
+        - "public/**/*"
+        - "*.config.*"
+        - "*.json"
+
+      stages:
+        # SSR 项目跳过本地构建，由 EdgeOne 在服务端构建
+        - name: 部署到 EdgeOne Pages
+          image: tencentcom/deploy-eopages:latest
+          script:
+            - npx edgeone pages deploy . -n <project-name> -t $EDGEONE_API_TOKEN -a overseas

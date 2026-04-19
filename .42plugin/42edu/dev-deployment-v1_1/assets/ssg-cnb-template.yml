@@ -1,0 +1,40 @@
+# EdgeOne Pages CNB 配置 - SSG 项目
+# 参考文档: https://pages.edgeone.ai/zh/document/using-cnb-plugin
+#
+# 使用说明:
+# 1. 将 imports URL 替换为你的密钥仓库链接
+# 2. 在密钥仓库中设置 EDGEONE_API_TOKEN
+# 3. 将 <project-name> 替换为你的 EdgeOne 项目名
+# 4. 区域选择: 删除 -a overseas 则使用 global（包含中国节点）
+#
+# 密钥仓库创建指引: https://docs.cnb.cool/zh/repo/secret.html
+
+master:
+  push:
+    - imports:
+        - https://cnb.cool/[user]/[repo]/-/blob/main/envs.yml
+
+      # 文件过滤: 仅当以下文件变更时触发构建
+      # 参考: https://docs.cnb.cool/zh/build/grammar.html
+      ifModify:
+        - "src/**/*"
+        - ".cnb.yml"
+        - "functions/**/*"
+        - "public/**/*"
+        - "*.config.*"
+        - "*.json"
+
+      stages:
+        # 阶段 1: 安装依赖并构建
+        # 使用 imbios/bun-node 镜像解决 bun SIGILL 兼容性问题
+        - name: 安装依赖并构建
+          image: imbios/bun-node:latest
+          script:
+            - bun install
+            - bun run build
+
+        # 阶段 2: 部署到 EdgeOne Pages
+        - name: 部署到 EdgeOne Pages
+          image: tencentcom/deploy-eopages:latest
+          script:
+            - edgeone pages deploy ./out -n <project-name> -t $EDGEONE_API_TOKEN -a overseas
