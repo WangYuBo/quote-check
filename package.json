@@ -32,8 +32,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:triggers": "tsx --env-file=.env --env-file=.env.local scripts/db-apply-triggers.ts",
-    "db:check": "tsx --env-file=.env --env-file=.env.local scripts/db-check.ts"
+    "db:triggers": "bun scripts/db-apply-triggers.ts",
+    "db:check": "bun scripts/db-check.ts",
+    "ai:smoke": "bun scripts/ai-smoke.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "0.0.72",
@@ -48,7 +49,7 @@
     "pino": "9.5.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "zod": "3.23.8"
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@eslint/js": "9.17.0",
