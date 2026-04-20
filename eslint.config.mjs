@@ -103,4 +103,12 @@ export default tseslint.config(
       'no-console': ['error', { allow: ['warn', 'error'] }],
     },
   },
+  {
+    // 契约测用 pg Client RETURNING 拿新行 id，rows[0]! 是必然存在的；
+    // 全部加守卫会把测试文件撑爆。单独放行 non-null 断言。
+    files: ['tests/contract/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
 );
