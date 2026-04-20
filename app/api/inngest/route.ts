@@ -2,6 +2,7 @@ import { serve } from 'inngest/next';
 
 import { inngest } from '@/inngest/client';
 import { pingFn } from '@/inngest/functions/ping';
+import { proofreadRunFn } from '@/inngest/functions/proofread-run';
 import { env } from '@/lib/env';
 
 /**
@@ -16,6 +17,6 @@ import { env } from '@/lib/env';
  */
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [pingFn],
+  functions: [pingFn, proofreadRunFn],
   signingKey: env.INNGEST_SIGNING_KEY,
 });
