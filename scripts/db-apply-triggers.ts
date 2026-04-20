@@ -25,7 +25,9 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-const sqlPath = resolve(process.cwd(), 'lib/db/migrations/0001_triggers.sql');
+// 文件名以 `_` 开头，避开 drizzle-kit 的数字递增前缀命名空间（0000/0001/...），
+// 避免未来某次 drizzle generate 撞到同名文件
+const sqlPath = resolve(process.cwd(), 'lib/db/migrations/_hand_triggers.sql');
 const sql = readFileSync(sqlPath, 'utf-8');
 
 async function main() {

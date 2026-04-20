@@ -1,13 +1,17 @@
--- 0001_triggers.sql
+-- _hand_triggers.sql
 -- 版本戳只读 + 报告冻结 + append-only 审计 + task.status CHECK + GIN / trigram 索引
 -- + result_reference_hit 监控视图与冷归档表（盲区 D5 改进）
 --
--- 执行顺序：drizzle-kit 生成的 0000_init.sql → 本 0001_triggers.sql
+-- 执行顺序：
+--   1. bun run db:migrate     —— drizzle 生成的 0000_*.sql / 0001_*.sql / ...
+--   2. bun run db:triggers    —— 本文件（scripts/db-apply-triggers.ts 读取）
+--
+-- 命名：以 `_` 前缀避开 drizzle-kit 的 0000/0001 递增命名空间，防止未来 generate
+-- 撞文件名。drizzle 不扫此文件，仅独立脚本 + _journal.json 机制保证幂等应用。
 -- spec-database-design §5 · real.md #7 · notes #6/#7 · ADR-006/011/012
 --
--- 手写迁移说明：
---   Drizzle Kit 暂不原生支持触发器 / 视图 / CHECK 约束的 DDL 生成；
---   该文件由 drizzle-kit migrate 一并应用。所有语句必须幂等，可重复执行。
+-- 所有语句幂等（CREATE OR REPLACE FUNCTION / DROP TRIGGER IF EXISTS / CREATE ... IF NOT EXISTS），
+-- 可重复跑 bun run db:triggers 而不破坏已有状态。
 
 -- ═════════════════════════════════════════════════════
 -- T-01: report_snapshot 冻结后不可 UPDATE/DELETE
