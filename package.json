@@ -34,7 +34,8 @@
     "db:studio": "drizzle-kit studio",
     "db:triggers": "bun scripts/db-apply-triggers.ts",
     "db:check": "bun scripts/db-check.ts",
-    "ai:smoke": "bun scripts/ai-smoke.ts"
+    "ai:smoke": "bun scripts/ai-smoke.ts",
+    "db:cleanup-smoke": "bun scripts/db-cleanup-smoke.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "0.0.72",

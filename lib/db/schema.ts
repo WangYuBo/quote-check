@@ -103,7 +103,9 @@ export const session = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    token: varchar('token', { length: 255 }).notNull(),
+    // better-auth 0.7.5 用 session.id 作为 cookie 值，不生成独立 token；
+    // 保留字段以兼容未来升级至 1.x（其 adapter 会回填 token 列）
+    token: varchar('token', { length: 255 }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     ipAddress: varchar('ip_address', { length: 64 }),
     userAgent: text('user_agent'),
