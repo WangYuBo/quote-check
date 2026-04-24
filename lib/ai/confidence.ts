@@ -15,6 +15,10 @@
  */
 
 export const CONFIDENCE_ALGO_VERSION = 'v1.0' as const;
+
+// DG-m2.2 待在真实语料（origin/260319-幺弟解惑）回测后敲定；当前为 pg_trgm CJK 经验初始值
+export const SIMILARITY_MATCH_THRESHOLD = 0.75;
+export const SIMILARITY_PARTIAL_THRESHOLD = 0.4;
 export type ConfidenceAlgoVersion = typeof CONFIDENCE_ALGO_VERSION;
 
 export const CONFIDENCE_WEIGHTS = {

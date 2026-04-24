@@ -3,14 +3,22 @@ import { z } from 'zod';
 
 import { inngest } from '@/inngest/client';
 import { DEFAULT_GENERATION_OPTIONS, MODEL_ID, defaultModel } from '@/lib/ai/client';
-import { CONFIDENCE_ALGO_VERSION, computeConfidence } from '@/lib/ai/confidence';
+import {
+  CONFIDENCE_ALGO_VERSION,
+  SIMILARITY_MATCH_THRESHOLD,
+  SIMILARITY_PARTIAL_THRESHOLD,
+  computeConfidence,
+} from '@/lib/ai/confidence';
+import { retrievePassagesForQuote } from '@/lib/ai/retrieval';
 import { PROMPT_VERSION, loadPromptRaw } from '@/lib/ai/prompts';
 import { buildResultIdempotencyKey } from '@/lib/idempotency';
+import { listUserReferences } from '@/lib/services/reference';
 import {
   createReportSnapshot,
   getReport,
   getTaskContext,
   saveQuotes,
+  saveReferenceHits,
   saveVerificationResult,
   updateTaskProgress,
   updateTaskStatus,
@@ -116,12 +124,23 @@ export const proofreadRunFn = inngest.createFunction(
         taskId: task.id,
         manuscriptId: task.manuscriptId,
         userId: task.userId,
+        referenceIds: task.referenceIds,
         attempt,
         paragraphs,
       };
     });
 
     if (!ctx) return { ok: true, taskId, skipped: true };
+
+    // ─── S1.5: load-references ───────────────────────────────────────
+    const refContext = await step.run('load-references', async () => {
+      if (ctx.referenceIds.length === 0) return { refs: [] as { id: string; canonicalName: string }[] };
+      const allRefs = await listUserReferences(ctx.userId);
+      const refs = allRefs
+        .filter((r) => ctx.referenceIds.includes(r.id) && r.parsedAt !== null)
+        .map((r) => ({ id: r.id, canonicalName: r.canonicalName }));
+      return { refs };
+    });
 
     // ─── S2: moderation-gate ──────────────────────────────────────────
     const moderationResult = await step.run('moderation-gate', async () => {
@@ -227,14 +246,42 @@ export const proofreadRunFn = inngest.createFunction(
       });
 
       await step.run(`verify-${q.id}`, async () => {
+        // MAS-2: pg_trgm 段落检索
+        const passages =
+          refContext.refs.length > 0
+            ? await retrievePassagesForQuote({
+                quoteText: q.quoteText,
+                referenceIds: refContext.refs.map((r) => r.id),
+              })
+            : [];
+
+        // 四态前置计算：有 ref 上传但无段落命中 → NOT_FOUND_IN_REF
+        const hasUploadedRefs = refContext.refs.length > 0;
+        const topSim = passages[0]?.similarity ?? 0;
+        const preMatchStatus: 'MATCH' | 'PARTIAL_MATCH' | 'NOT_MATCH' | 'NOT_FOUND_IN_REF' | undefined =
+          !hasUploadedRefs
+            ? undefined
+            : passages.length === 0
+              ? 'NOT_FOUND_IN_REF'
+              : topSim >= SIMILARITY_MATCH_THRESHOLD
+                ? 'MATCH'
+                : topSim >= SIMILARITY_PARTIAL_THRESHOLD
+                  ? 'PARTIAL_MATCH'
+                  : 'NOT_MATCH';
+
+        // 构建参考原文字段（替换 hardcoded 无参考分支）
+        const refContent =
+          passages.length > 0
+            ? passages.map((p, i) => `参考段落${i + 1}：${p.text}`).join('\n')
+            : '（无参考文献内容可用，请基于已知知识判断）';
+
         const userMsg = [
           `引用文字：${q.quoteText}`,
           `作者解释：${q.authorExplanation}`,
           `引用前文：${q.contextWindow}`,
-          `引用后文：`,
           q.locationHint ? `位置提示：${q.locationHint}` : '',
           `原文来源：${q.sourceWorkHint || '未知'}`,
-          `（无参考文献内容可用，请基于已知知识判断）`,
+          `参考原文内容：\n${refContent}`,
         ]
           .filter(Boolean)
           .join('\n');
@@ -272,7 +319,7 @@ export const proofreadRunFn = inngest.createFunction(
 
         if (!verifyResult) {
           logger.warn({ quoteId: q.id, rawPreview: rawOutput.slice(0, 200) }, '[proofread-run] verify parse failed');
-          await saveVerificationResult({
+          const failResult = await saveVerificationResult({
             taskId: ctx.taskId,
             quoteId: q.id,
             matchStatus: 'NOT_FOUND_IN_REF',
@@ -294,20 +341,30 @@ export const proofreadRunFn = inngest.createFunction(
             idempotencyKey,
             attemptCount: attempt + 1,
           });
+          if (failResult && hasUploadedRefs) {
+            await saveReferenceHits(
+              failResult.id,
+              refContext.refs.map((r) => ({ referenceId: r.id, hit: false })),
+            );
+          }
           return { ok: false };
         }
 
         // 客观置信度（real.md #2：不用 LLM 自评）
-        const refHit = verifyResult.reference_hits.length > 0 ? 1 : 0;
-        const locationValid = verifyResult.reference_hits.some((h) => h.location.length > 0)
-          ? 1
-          : 0;
-        const conf = computeConfidence({ refHit, locationValid, crossModel: 0 });
+        // 有上传参考时，refHit = top similarity；无时用 LLM reference_hits 作信号
+        const refHitSignal = hasUploadedRefs ? topSim : (verifyResult.reference_hits.length > 0 ? 1 : 0);
+        const locationValid = hasUploadedRefs
+          ? (passages.some((p) => p.paragraphSeq >= 0) ? 1 : 0)
+          : (verifyResult.reference_hits.some((h) => h.location.length > 0) ? 1 : 0);
+        const conf = computeConfidence({ refHit: refHitSignal, locationValid, crossModel: 0 });
 
-        await saveVerificationResult({
+        // matchStatus：有 preMatchStatus 时覆盖 LLM 结果
+        const finalMatchStatus = preMatchStatus ?? llmMatchToDb(verifyResult.text_accuracy.match_status);
+
+        const savedResult = await saveVerificationResult({
           taskId: ctx.taskId,
           quoteId: q.id,
-          matchStatus: llmMatchToDb(verifyResult.text_accuracy.match_status),
+          matchStatus: finalMatchStatus,
           verdictTextAccuracy: {
             verdict: llmMatchToVerdict(verifyResult.text_accuracy.match_status),
             explanation: verifyResult.text_accuracy.differences || verifyResult.overall_remark,
@@ -348,6 +405,21 @@ export const proofreadRunFn = inngest.createFunction(
           idempotencyKey,
           attemptCount: attempt + 1,
         });
+
+        // M:N result_reference_hit 写入
+        if (savedResult && hasUploadedRefs) {
+          await saveReferenceHits(
+            savedResult.id,
+            refContext.refs.map((r) => {
+              const hit = passages.find((p) => p.referenceId === r.id);
+              return {
+                referenceId: r.id,
+                hit: !!hit,
+                ...(hit ? { snippet: hit.text.slice(0, 200), similarity: hit.similarity, retrievalMethod: 'pg_trgm' } : {}),
+              };
+            }),
+          );
+        }
 
         return { ok: true };
       });

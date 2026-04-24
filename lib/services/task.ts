@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
-import { paragraph, quote, reportSnapshot, task, verificationResult } from '@/lib/db/schema';
+import { paragraph, quote, reference, reportSnapshot, resultReferenceHit, task, verificationResult } from '@/lib/db/schema';
 import type {
   NewQuote,
   NewReportSnapshot,
@@ -134,11 +134,47 @@ export async function createReportSnapshot(values: NewReportSnapshot): Promise<v
   await db.insert(reportSnapshot).values(values);
 }
 
+export async function saveReferenceHits(
+  resultId: string,
+  hits: {
+    referenceId: string;
+    hit: boolean;
+    snippet?: string;
+    similarity?: number;
+    retrievalMethod?: string;
+  }[],
+): Promise<void> {
+  if (hits.length === 0) return;
+  await db
+    .insert(resultReferenceHit)
+    .values(
+      hits.map((h) => ({
+        resultId,
+        referenceId: h.referenceId,
+        hit: h.hit,
+        ...(h.snippet !== undefined ? { snippet: h.snippet } : {}),
+        ...(h.similarity !== undefined ? { similarity: String(h.similarity) } : {}),
+        ...(h.retrievalMethod !== undefined ? { retrievalMethod: h.retrievalMethod } : {}),
+      })),
+    )
+    .onConflictDoNothing();
+}
+
+export interface ReferenceHitRow {
+  referenceId: string;
+  canonicalName: string;
+  versionLabel: string | null;
+  hit: boolean;
+  snippet: string | null;
+  similarity: string | null;
+}
+
 export interface ReportRow {
   task: Task;
   results: (VerificationResult & {
     quoteText: string;
     sourceWorkHint: string | null;
+    referenceHits: ReferenceHitRow[];
   })[];
 }
 
@@ -171,5 +207,48 @@ export async function getReport(taskId: string): Promise<ReportRow | null> {
     .innerJoin(quote, eq(verificationResult.quoteId, quote.id))
     .where(eq(verificationResult.taskId, taskId));
 
-  return { task: taskRow, results: results as ReportRow['results'] };
+  // 批量拉取所有结果的 reference hits
+  const resultIds = results.map((r) => r.id);
+  const hitRows =
+    resultIds.length > 0
+      ? await db
+          .select({
+            resultId: resultReferenceHit.resultId,
+            referenceId: resultReferenceHit.referenceId,
+            hit: resultReferenceHit.hit,
+            snippet: resultReferenceHit.snippet,
+            similarity: resultReferenceHit.similarity,
+            canonicalName: reference.canonicalName,
+            versionLabel: reference.versionLabel,
+          })
+          .from(resultReferenceHit)
+          .innerJoin(reference, eq(resultReferenceHit.referenceId, reference.id))
+          .where(eq(resultReferenceHit.hit, true))
+      : [];
+
+  const hitsByResultId = new Map<string, ReferenceHitRow[]>();
+  for (const h of hitRows) {
+    if (!hitsByResultId.has(h.resultId)) hitsByResultId.set(h.resultId, []);
+    const existing = hitsByResultId.get(h.resultId);
+    if (existing) {
+      existing.push({
+        referenceId: h.referenceId,
+        canonicalName: h.canonicalName,
+        versionLabel: h.versionLabel,
+        hit: h.hit,
+        snippet: h.snippet,
+        similarity: h.similarity,
+      });
+    }
+  }
+
+  return {
+    task: taskRow,
+    results: results.map((r) => ({
+      ...(r as unknown as VerificationResult),
+      quoteText: r.quoteText,
+      sourceWorkHint: r.sourceWorkHint,
+      referenceHits: hitsByResultId.get(r.id) ?? [],
+    })) as ReportRow['results'],
+  };
 }

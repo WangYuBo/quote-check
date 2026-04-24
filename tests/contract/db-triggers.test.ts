@@ -57,6 +57,13 @@ beforeAll(async () => {
   );
   await client.query(patchSql);
 
+  // 0002 新增 reference_paragraph 表（MAS-2）
+  const refParaSql = readFileSync(
+    resolve(process.cwd(), 'lib/db/migrations/0002_simple_luckman.sql'),
+    'utf-8',
+  );
+  await client.query(refParaSql);
+
   // _hand_triggers 触发器 + GIN + CHECK + 视图 + 归档表
   const trigSql = readFileSync(
     resolve(process.cwd(), 'lib/db/migrations/_hand_triggers.sql'),

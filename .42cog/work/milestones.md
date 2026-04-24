@@ -56,6 +56,7 @@ updated: 2026-04-20
 
 ## 已完成（🟢）
 
+- `2026-04-24` | F | 🟢 | **MAS-2 参考为准绳**：references 上传 API（POST/GET `/api/references`，copyrightDeclared 强制）+ `reference_paragraph` 表 + GIN trigram 索引 I-03 + `pg_trgm` 段落级检索（rawSql 绕 drizzle array 序列化坑）+ `stripForTrigram()` 去标点归一化 + 四态 matchStatus（MATCH/PARTIAL_MATCH/NOT_MATCH/NOT_FOUND_IN_REF）+ `result_reference_hit` M:N 填充（pg_trgm + hit=true/false + snippet + similarity）+ upload 页三阶段扩展 + reports 页命中区块；E2E 验证：论语 referenceId `088e7520`，《论语》引文 PARTIAL_MATCH similarity=0.647 hit=true pg_trgm ✓，其余两引文 NOT_FOUND_IN_REF ✓；typecheck ✓ lint ✓ | `app/api/references/route.ts` `lib/services/reference.ts` `lib/ai/retrieval.ts` `lib/text/normalize.ts`(stripForTrigram) `lib/db/schema.ts`(referenceParagraph) `inngest/functions/proofread-run.ts` `lib/services/task.ts`(saveReferenceHits) `app/upload/page.tsx` `app/reports/[taskId]/page.tsx`
 - `2026-04-24` | T | 🟢 | **normMatchStatus 中文归一化修复 + MAS-1 E2E 验证**：LLM 返回 `"无需比对"` 等中文值导致 Zod VerifyOutputSchema 解析失败（"LLM 返回格式异常"）；以 `normMatchStatus()` + `z.unknown().transform()` 统一归一化；typecheck ✓ lint ✓；E2E 测试 3 引用全部解析正确（论语/资本论 MATCH confidence=1.000，狂人日记 PARTIAL_MATCH），verdictInterpretation/verdictContext 均输出合法英文 enum 值；MAS-1 判据全部满足 | `inngest/functions/proofread-run.ts`
 - `2026-04-24` | F | 🟢 | **MAS-1 校对主流程基座**：`POST /api/manuscripts`（Vercel Blob + txt/md/docx 解析 + paragraph 落库）→ `POST /api/tasks`（task 创建 + Inngest send）→ proofread-run 真实 LLM（extract-quotes DeepSeek + verify-each-quote 串行 + 三信号置信度 + reportSnapshot freeze）→ `GET /api/reports/[taskId]`（三维度 JSON）；UI 三页（upload 拖拽 / tasks/[id] 进度轮询 / reports/[taskId] 三维度卡片）；typecheck ✓ · lint ✓ · unit 24/24 | `app/api/manuscripts/` `app/api/tasks/` `app/api/reports/` `inngest/functions/proofread-run.ts` `lib/parsers/manuscript.ts` `lib/services/` `lib/storage/blob.ts`
 - `2026-04-24` | T | 🟢 | **PG 6 触发器契约测 21/21 全绿（m1 达成）**：Docker Desktop 启动后首次真实执行 `bun run test:contract`，testcontainers-pg 拉起 postgres:16-alpine → 跑全量迁移 + _hand_triggers.sql → 21 个 it 全部 pass（T-01~T-06 + C-03 + 扩展/索引 · 152s）；m1 所有 7 项判据闭合；roadmap-v1.0.md 当前位置更新为 m2 起点 | `tests/contract/db-triggers.test.ts`, `.42cog/work/roadmap-v1.0.md`
@@ -99,7 +100,7 @@ updated: 2026-04-20
 ### MAS 故事实施
 
 - ~~| F | ⚪ | MAS-1 基座重构~~→ 已完成（2026-04-24）
-- | F | ⚪ | MAS-2 参考为准绳：单/多权威参考上传 + 三态匹配（MATCH/NOT_MATCH/NOT_FOUND_IN_REF）+ prompt 中性措辞迁移 + `SourceCorpusProvider` 接口预留 | —
+- ~~| F | ⚪ | MAS-2 参考为准绳~~→ 已完成（2026-04-24，map.txt 中性措辞 lint 延后至 MAS-2b）
 - | F | ⚪ | MAS-3 拒绝显式：`is_moderation_rejection` 检测 + UI 独立状态 | —
 - | F | ⚪ | MAS-4 成本透明：预估 + 二次确认 + 越界暂停 | —
 - | F | ⚪ | MAS-5 版本冻结：prompt hash + 数据库只读约束 | —

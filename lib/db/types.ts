@@ -12,6 +12,7 @@ import type {
   promptVersion,
   quote,
   reference,
+  referenceParagraph,
   reportSnapshot,
   resultReferenceHit,
   session,
@@ -45,6 +46,9 @@ export type NewQuote = InferInsertModel<typeof quote>;
 
 export type Reference = InferSelectModel<typeof reference>;
 export type NewReference = InferInsertModel<typeof reference>;
+
+export type ReferenceParagraph = InferSelectModel<typeof referenceParagraph>;
+export type NewReferenceParagraph = InferInsertModel<typeof referenceParagraph>;
 
 export type Task = InferSelectModel<typeof task>;
 export type NewTask = InferInsertModel<typeof task>;

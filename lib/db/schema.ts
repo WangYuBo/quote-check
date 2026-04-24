@@ -279,6 +279,26 @@ export const reference = pgTable(
   }),
 );
 
+export const referenceParagraph = pgTable(
+  'reference_paragraph',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    referenceId: uuid('reference_id')
+      .notNull()
+      .references(() => reference.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    displayId: varchar('display_id', { length: 64 }).notNull(),
+    text: text('text').notNull(),
+    textNormalized: text('text_normalized').notNull(),
+    textHash: varchar('text_hash', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    referenceSeqIdx: index('idx_ref_para_reference_seq').on(t.referenceId, t.seq),
+    // GIN trigram 索引在 _hand_triggers.sql I-03
+  }),
+);
+
 export const task = pgTable(
   'task',
   {
@@ -556,7 +576,15 @@ export const quoteRelations = relations(quote, ({ one, many }) => ({
 
 export const referenceRelations = relations(reference, ({ one, many }) => ({
   user: one(user, { fields: [reference.userId], references: [user.id] }),
+  paragraphs: many(referenceParagraph),
   hits: many(resultReferenceHit),
+}));
+
+export const referenceParagraphRelations = relations(referenceParagraph, ({ one }) => ({
+  reference: one(reference, {
+    fields: [referenceParagraph.referenceId],
+    references: [reference.id],
+  }),
 }));
 
 export const taskRelations = relations(task, ({ one, many }) => ({

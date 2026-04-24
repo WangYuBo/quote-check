@@ -61,6 +61,15 @@ export function normalizeForCompare(input: string, mode: NormalizeMode = 'preser
   return s;
 }
 
+// CJK 标点 + 全角空格正则（用于 pg_trgm 存储层归一化）
+const CJK_PUNCT_RE =
+  /[\u3000-\u303f\uff00-\uffef\u2018\u2019\u201c\u201d\u2014\u2013\u00b7\u300a\u300b\u3008\u3009\u300c\u300d\u300e\u300f\u3010\u3011\u3014\u3015\u30fb\ufe10-\ufe1f\ufe30-\ufe4f\s]/g;
+
+// 在 normalizeForCompare 之后调用，去标点供 pg_trgm 存储（不影响展示文本）
+export function stripForTrigram(s: string): string {
+  return s.replace(CJK_PUNCT_RE, '').replace(/[^一-鿿㐀-䶿豈-﫿\w]/g, '');
+}
+
 // 代理对安全的字符数组（spec-qa §3.2）
 export function toCharArray(s: string): string[] {
   return Array.from(s);
