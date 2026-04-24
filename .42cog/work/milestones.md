@@ -56,6 +56,7 @@ updated: 2026-04-20
 
 ## 已完成（🟢）
 
+- `2026-04-24` | F | 🟢 | **MAS-1 校对主流程基座**：`POST /api/manuscripts`（Vercel Blob + txt/md/docx 解析 + paragraph 落库）→ `POST /api/tasks`（task 创建 + Inngest send）→ proofread-run 真实 LLM（extract-quotes DeepSeek + verify-each-quote 串行 + 三信号置信度 + reportSnapshot freeze）→ `GET /api/reports/[taskId]`（三维度 JSON）；UI 三页（upload 拖拽 / tasks/[id] 进度轮询 / reports/[taskId] 三维度卡片）；typecheck ✓ · lint ✓ · unit 24/24 | `app/api/manuscripts/` `app/api/tasks/` `app/api/reports/` `inngest/functions/proofread-run.ts` `lib/parsers/manuscript.ts` `lib/services/` `lib/storage/blob.ts`
 - `2026-04-24` | T | 🟢 | **PG 6 触发器契约测 21/21 全绿（m1 达成）**：Docker Desktop 启动后首次真实执行 `bun run test:contract`，testcontainers-pg 拉起 postgres:16-alpine → 跑全量迁移 + _hand_triggers.sql → 21 个 it 全部 pass（T-01~T-06 + C-03 + 扩展/索引 · 152s）；m1 所有 7 项判据闭合；roadmap-v1.0.md 当前位置更新为 m2 起点 | `tests/contract/db-triggers.test.ts`, `.42cog/work/roadmap-v1.0.md`
 - `2026-04-20` | D | 🟢 | **路线图 v1.0 落盘 + 三文档语义分工**：新增 `.42cog/work/roadmap-v1.0.md`（m1/m2/m3 判据 + MAS 依赖图 + 3 个决策门 DG-m2.1/2.2/3.1 + 预估 4-5 周）；修 `meta.md §项目里程碑` 明确其定位为"版本愿景"，与 roadmap（执行）/ milestones（事后账本）三层分工；消除"里程碑"一词双义 | `.42cog/work/roadmap-v1.0.md`, `.42cog/meta/meta.md`, `.42cog/work/milestones.md`
 - `2026-04-20` | T | 🟢 | **PG 6 触发器契约测**：tests/contract/db-triggers.test.ts 覆盖 T-01~T-06 + C-03 + 扩展/索引在场性（21 it）；testcontainers-pg 11.14.0 装机；`test:contract` 脚本固化 DOCKER_HOST 指向 Docker Desktop socket；暴露 spec-quality-assurance §4.1 触发器名漂移（记为 TD-1 待修）| `tests/contract/db-triggers.test.ts`, `package.json`
