@@ -4,6 +4,15 @@ import { auth } from '@/lib/auth';
 import { getReport } from '@/lib/services/task';
 import { headers } from 'next/headers';
 
+interface ReferenceHit {
+  referenceId: string;
+  canonicalName: string;
+  versionLabel: string | null;
+  hit: boolean;
+  snippet: string | null;
+  similarity: string | null;
+}
+
 interface VerifyResult {
   id: string;
   quoteId: string;
@@ -31,6 +40,7 @@ interface VerifyResult {
     weights: { w1: number; w2: number; w3: number };
     algoVersion: string;
   };
+  referenceHits: ReferenceHit[];
 }
 
 const MATCH_LABEL: Record<string, string> = {
@@ -108,6 +118,33 @@ function VerifyCard({ result }: { result: VerifyResult }) {
           explanation={result.verdictContext.explanation}
         />
       </div>
+
+      {/* 参考文献命中 */}
+      {result.referenceHits.length > 0 && (
+        <div className="space-y-2 border-t border-(--color-border) pt-3">
+          <p className="text-xs text-(--color-fg-muted) font-medium">参考文献命中</p>
+          {result.referenceHits.map((h) => (
+            <div key={h.referenceId} className="rounded-lg bg-gray-50 p-3 text-xs space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-(--color-fg)">
+                  {h.canonicalName}
+                  {h.versionLabel ? `（${h.versionLabel}）` : ''}
+                </span>
+                {h.similarity && (
+                  <span className="text-(--color-fg-muted)">
+                    相似度 {(Number(h.similarity) * 100).toFixed(0)}%
+                  </span>
+                )}
+              </div>
+              {h.snippet && (
+                <p className="text-(--color-fg-muted) leading-relaxed line-clamp-3">
+                  {h.snippet}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

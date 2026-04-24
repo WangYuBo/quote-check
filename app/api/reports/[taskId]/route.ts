@@ -33,6 +33,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ task
       verdictContext: r.verdictContext,
       confidence: r.confidence,
       confidenceBreakdown: r.confidenceBreakdown,
+      referenceHits: r.referenceHits,
     })),
   });
 }

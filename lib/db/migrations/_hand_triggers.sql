@@ -159,6 +159,13 @@ CREATE INDEX IF NOT EXISTS idx_quote_normalized_trgm
   ON quote USING GIN (quote_normalized gin_trgm_ops);
 
 -- ═════════════════════════════════════════════════════
+-- I-03: reference_paragraph text_normalized GIN trigram
+--   MAS-2 参考为准绳：pg_trgm 段落级检索
+-- ═════════════════════════════════════════════════════
+CREATE INDEX IF NOT EXISTS idx_ref_para_text_trgm
+  ON reference_paragraph USING GIN (text_normalized gin_trgm_ops);
+
+-- ═════════════════════════════════════════════════════
 -- C-03: task.status 值域 CHECK（替代 pgEnum，D-03a）
 --   值域与 lib/db/schema.ts TASK_STATUS_VALUES 同源；
 --   新状态加值三处同步：(a) 常量 (b) 本 CHECK (c) §8.2 Zod

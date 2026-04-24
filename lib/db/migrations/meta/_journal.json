@@ -15,6 +15,13 @@
       "when": 1776651496629,
       "tag": "0001_solid_domino",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777038784102,
+      "tag": "0002_simple_luckman",
+      "breakpoints": true
     }
   ]
 }
