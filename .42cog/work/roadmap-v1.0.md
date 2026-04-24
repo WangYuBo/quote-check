@@ -25,26 +25,23 @@ owner: yubo
 
 ---
 
-## 当前位置（2026-04-20）
+## 当前位置（2026-04-24）
 
 ```
-v1.0-m1 基建就绪    ████████████░░░░  75%   ← 当前
-v1.0-m2 校对主流程  ░░░░░░░░░░░░░░░░   0%
+v1.0-m1 基建就绪    ████████████████ 100%   ✓ 达成（2026-04-24）
+v1.0-m2 校对主流程  ░░░░░░░░░░░░░░░░   0%   ← 当前
 v1.0-m3 上线前闭环  ░░░░░░░░░░░░░░░░   0%
 ```
 
-**已到手的基建**（7 项中完成 5）：
+**m1 全部 7 项已达成**：
 
 1. ✓ 9 份规约闭合（meta/cog/real + 6 份 spec-*）
-2. ✓ Drizzle 16 表 + 6 触发器 + 3 GIN + pg_trgm 部署到 Neon（db:migrate + db:triggers + db:check 三步法）
-3. ✓ Better Auth 0.7.5 全生命周期真实验证（signup/signin/get-session/signout）
+2. ✓ Drizzle 16 表 + 6 触发器 + 3 GIN + pg_trgm 部署到 Neon
+3. ✓ Better Auth 0.7.5 全生命周期真实验证
 4. ✓ AI client（DeepSeek via 硅基流动 baseURL）ai-smoke 握手
-5. ✓ Inngest proofread-run 八步骨架 + idempotency 三要素契约（lib/idempotency.ts）
-
-**剩余基建**（m1 收尾）：
-
-6. 🟡 PG 6 触发器契约测（testcontainers-pg · 本次落盘 tests/contract/db-triggers.test.ts）
-7. ⚪ milestones.md 补登过去四次基建（v0.0.12-16 未进账）
+5. ✓ Inngest proofread-run 八步骨架 + idempotency 三要素
+6. ✓ PG 6 触发器契约测 21/21 全绿（testcontainers-pg · 2026-04-24）
+7. ✓ milestones.md 追平 + roadmap-v1.0.md 落盘
 
 ---
 
@@ -59,10 +56,10 @@ v1.0-m3 上线前闭环  ░░░░░░░░░░░░░░░░   0%
 | 3 | Better Auth 全生命周期可用 | signup/signin/session/signout 四 API 真实响应 | ✓ |
 | 4 | AI client 连通硅基流动 | `ai:smoke` 返回 "OK" 且 tokenUsage 非零 | ✓ |
 | 5 | Inngest 路由 + 骨架函数注册 | GET /api/inngest 返回函数清单 | ✓ |
-| 6 | 6 触发器契约测全绿 | `test:contract` pass 21+ | 🟡 |
-| 7 | milestones.md 追平实际进度 + roadmap-v1.0.md 落盘 | 文件存在 + 4 条 v0.0.12-16 补登 | 🟡 |
+| 6 | 6 触发器契约测全绿 | `test:contract` pass 21+ | ✓ 2026-04-24 |
+| 7 | milestones.md 追平实际进度 + roadmap-v1.0.md 落盘 | 文件存在 + 4 条 v0.0.12-16 补登 | ✓ |
 
-**m1 剩余预估**：0.5-1 工作日
+**m1 达成（2026-04-24）**
 
 **m1 阶段已知技术债**（不阻塞 m1 达成，但需在 m2 前消化）：
 
