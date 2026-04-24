@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import { paragraph, quote, reportSnapshot, task, verificationResult } from '@/lib/db/schema';
@@ -168,7 +168,7 @@ export async function getReport(taskId: string): Promise<ReportRow | null> {
       sourceWorkHint: quote.sourceWorkHint,
     })
     .from(verificationResult)
-    .innerJoin(quote, and(eq(verificationResult.quoteId, quote.id)))
+    .innerJoin(quote, eq(verificationResult.quoteId, quote.id))
     .where(eq(verificationResult.taskId, taskId));
 
   return { task: taskRow, results: results as ReportRow['results'] };

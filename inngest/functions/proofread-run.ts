@@ -29,22 +29,43 @@ const ExtractedQuoteSchema = z.object({
 });
 const ExtractOutputSchema = z.array(ExtractedQuoteSchema);
 
+// LLM 有时返回中文值（"无需比对"/"部分一致"/"不一致"等），需要归一化
+function normMatchStatus(
+  raw: unknown,
+  type: 'text' | 'dim',
+): 'match' | 'partial' | 'mismatch' | 'not_found' | 'not_applicable' {
+  const s = String(raw ?? '').toLowerCase().trim();
+  if (s.includes('not_found') || s.includes('未找到') || s.includes('原文中未找到')) return 'not_found';
+  if (s.includes('not_applicable') || s.includes('无需') || s.includes('不适用')) return 'not_applicable';
+  if (s.includes('partial') || s.includes('部分') || s.includes('mismatch') || s.includes('不一致') || s.includes('不符')) {
+    // 分离 partial vs mismatch
+    if (s.includes('partial') || s.includes('部分')) return 'partial';
+    return 'mismatch';
+  }
+  if (s.includes('mismatch') || s.includes('不一致') || s.includes('不符')) return 'mismatch';
+  if (s.includes('match') || s.includes('一致') || s.includes('符合')) return 'match';
+  return type === 'text' ? 'not_found' : 'not_applicable';
+}
+
+const MatchStatusCoerce = z.unknown().transform((v) => normMatchStatus(v, 'text'));
+const DimStatusCoerce = z.unknown().transform((v) => normMatchStatus(v, 'dim'));
+
 // ─── Zod schema: LLM verify output ───────────────────────────────────────────
 const VerifyOutputSchema = z.object({
   quote: z.string(),
   text_accuracy: z.object({
-    match_status: z.enum(['match', 'partial', 'mismatch', 'not_found']),
+    match_status: MatchStatusCoerce,
     differences: z.string().default(''),
     original_text: z.string().default(''),
     variant_note: z.string().default(''),
   }),
   interpretation_accuracy: z.object({
-    match_status: z.enum(['match', 'partial', 'mismatch', 'not_applicable']),
+    match_status: DimStatusCoerce,
     differences: z.string().default(''),
     editor_suggestion: z.string().default(''),
   }),
   context_appropriateness: z.object({
-    match_status: z.enum(['match', 'partial', 'mismatch', 'not_applicable']),
+    match_status: DimStatusCoerce,
     differences: z.string().default(''),
     editor_suggestion: z.string().default(''),
   }),
@@ -54,28 +75,18 @@ const VerifyOutputSchema = z.object({
   overall_remark: z.string().default(''),
 });
 
-function llmMatchToDb(
-  status: 'match' | 'partial' | 'mismatch' | 'not_found',
-): 'MATCH' | 'PARTIAL_MATCH' | 'NOT_MATCH' | 'NOT_FOUND_IN_REF' {
-  const map = {
-    match: 'MATCH',
-    partial: 'PARTIAL_MATCH',
-    mismatch: 'NOT_MATCH',
-    not_found: 'NOT_FOUND_IN_REF',
-  } as const;
-  return map[status];
+function llmMatchToDb(status: string): 'MATCH' | 'PARTIAL_MATCH' | 'NOT_MATCH' | 'NOT_FOUND_IN_REF' {
+  if (status === 'match') return 'MATCH';
+  if (status === 'partial') return 'PARTIAL_MATCH';
+  if (status === 'mismatch') return 'NOT_MATCH';
+  return 'NOT_FOUND_IN_REF';
 }
 
-function llmMatchToVerdict(
-  status: 'match' | 'partial' | 'mismatch' | 'not_found',
-): 'MATCH' | 'VARIANT' | 'MISMATCH' | 'NOT_FOUND_IN_REF' {
-  const map = {
-    match: 'MATCH',
-    partial: 'VARIANT',
-    mismatch: 'MISMATCH',
-    not_found: 'NOT_FOUND_IN_REF',
-  } as const;
-  return map[status];
+function llmMatchToVerdict(status: string): 'MATCH' | 'VARIANT' | 'MISMATCH' | 'NOT_FOUND_IN_REF' {
+  if (status === 'match') return 'MATCH';
+  if (status === 'partial') return 'VARIANT';
+  if (status === 'mismatch') return 'MISMATCH';
+  return 'NOT_FOUND_IN_REF';
 }
 
 export const proofreadRunFn = inngest.createFunction(
@@ -237,19 +248,30 @@ export const proofreadRunFn = inngest.createFunction(
           ],
         });
 
-        const jsonMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)```/);
-        const jsonStr = jsonMatch?.[1] ?? rawOutput.trim();
-
+        // 多策略 JSON 提取：① 代码块 ② 纯 JSON 起始位置 ③ 全文
         let verifyResult: z.infer<typeof VerifyOutputSchema> | null = null;
-        try {
-          const parsedRaw = JSON.parse(jsonStr);
-          const parsed = VerifyOutputSchema.safeParse(parsedRaw);
-          if (parsed.success) verifyResult = parsed.data;
-        } catch {
-          logger.warn({ quoteId: q.id }, '[proofread-run] verify JSON parse failed');
+        const jsonCandidates: string[] = [];
+        const codeBlockMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (codeBlockMatch?.[1]) jsonCandidates.push(codeBlockMatch[1].trim());
+        const braceMatch = rawOutput.match(/\{[\s\S]*\}/);
+        if (braceMatch?.[0]) jsonCandidates.push(braceMatch[0]);
+        jsonCandidates.push(rawOutput.trim());
+
+        for (const candidate of jsonCandidates) {
+          try {
+            const parsedRaw = JSON.parse(candidate);
+            const parsed = VerifyOutputSchema.safeParse(parsedRaw);
+            if (parsed.success) {
+              verifyResult = parsed.data;
+              break;
+            }
+          } catch {
+            // try next candidate
+          }
         }
 
         if (!verifyResult) {
+          logger.warn({ quoteId: q.id, rawPreview: rawOutput.slice(0, 200) }, '[proofread-run] verify parse failed');
           await saveVerificationResult({
             taskId: ctx.taskId,
             quoteId: q.id,
@@ -258,14 +280,8 @@ export const proofreadRunFn = inngest.createFunction(
               verdict: 'NOT_FOUND_IN_REF',
               explanation: 'LLM 返回格式异常，无法解析',
             },
-            verdictInterpretation: {
-              verdict: 'NOT_APPLICABLE',
-              explanation: '',
-            },
-            verdictContext: {
-              verdict: 'NOT_APPLICABLE',
-              explanation: '',
-            },
+            verdictInterpretation: { verdict: 'NOT_APPLICABLE', explanation: '' },
+            verdictContext: { verdict: 'NOT_APPLICABLE', explanation: '' },
             confidence: '0',
             confidenceBreakdown: {
               refHit: 0,
@@ -274,6 +290,7 @@ export const proofreadRunFn = inngest.createFunction(
               weights: { w1: 0.5, w2: 0.5, w3: 0 },
               algoVersion: CONFIDENCE_ALGO_VERSION,
             },
+            rawResponseSnapshot: { raw: rawOutput.slice(0, 2000) },
             idempotencyKey,
             attemptCount: attempt + 1,
           });
@@ -296,7 +313,7 @@ export const proofreadRunFn = inngest.createFunction(
             explanation: verifyResult.text_accuracy.differences || verifyResult.overall_remark,
           },
           verdictInterpretation: {
-            verdict: (() => {
+            verdict: ((): 'CONSISTENT' | 'PARTIAL' | 'DIVERGENT' | 'NOT_APPLICABLE' => {
               const m = verifyResult.interpretation_accuracy.match_status;
               if (m === 'match') return 'CONSISTENT';
               if (m === 'partial') return 'PARTIAL';
@@ -306,7 +323,7 @@ export const proofreadRunFn = inngest.createFunction(
             explanation: verifyResult.interpretation_accuracy.differences,
           },
           verdictContext: {
-            verdict: (() => {
+            verdict: ((): 'APPROPRIATE' | 'AMBIGUOUS' | 'OUT_OF_CONTEXT' | 'NOT_APPLICABLE' => {
               const m = verifyResult.context_appropriateness.match_status;
               if (m === 'match') return 'APPROPRIATE';
               if (m === 'partial') return 'AMBIGUOUS';

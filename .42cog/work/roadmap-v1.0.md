@@ -29,9 +29,11 @@ owner: yubo
 
 ```
 v1.0-m1 基建就绪    ████████████████ 100%   ✓ 达成（2026-04-24）
-v1.0-m2 校对主流程  ░░░░░░░░░░░░░░░░   0%   ← 当前
+v1.0-m2 校对主流程  ████░░░░░░░░░░░░  25%   ← 当前（MAS-1 ✓）
 v1.0-m3 上线前闭环  ░░░░░░░░░░░░░░░░   0%
 ```
+
+**MAS-1 基座达成（2026-04-24）**：POST /api/manuscripts 上传 → POST /api/tasks 发事件 → Inngest proofread-run 真实 LLM 消费（DeepSeek via 硅基流动）→ 三维度结果入 verification_result → /api/reports/:id 返回 JSON，UI 三维度卡片展示。全流程 E2E 验证通过（3 引用全部正确解析，normMatchStatus 中文归一化生效，无"LLM 返回格式异常"）。DG-m2.1 已决策：v1.0 选串行（选项 A，Inngest 免费层约束）。
 
 **m1 全部 7 项已达成**：
 
