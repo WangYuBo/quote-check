@@ -1,125 +1,394 @@
-import { inngest } from '@/inngest/client';
-import { buildResultIdempotencyKey } from '@/lib/idempotency';
+import { generateText } from 'ai';
+import { z } from 'zod';
 
-/**
- * 校对主工作流骨架（MS-L-05/06/07 · ADR-002）
- *
- * 本文件当前是**骨架**——按 step.run 分步定好结构 + TODO 占位，让后续 MAS-1~6 直接填肉：
- *
- *   load-task       — 按 taskId 读 task/manuscript/references/user 全量上下文
- *   parse           — mammoth/pdf-parse/epubjs 解析为 paragraph 行（MAS-2）
- *   moderation-gate — DeepSeek /chat/completions 审核拒绝检测（lib/ai/moderation.ts）
- *   extract         — prompt v1/extract.txt → quote 行（MAS-3）
- *   verify          — prompt v1/verify.txt 循环每条 quote → verification_result（MAS-4）
- *   map             — prompt v1/map.txt → result_reference_hit（PARTIAL_MATCH · ADR-011 · MAS-4）
- *   compute-confidence — lib/ai/confidence.ts 三信号融合（ADR-007）
- *   freeze-report   — report_snapshot.frozen_at 写入（real.md #7 · T-01 触发器）
- *
- * idempotency key 关键约束（ADR-002 · memory quote-check-idempotency-key-attempt）：
- *   verify/map 步骤写 verification_result 时必须用 `buildResultIdempotencyKey({taskId, quoteId, attemptN})`；
- *   attemptN = ctx.attempt（Inngest 函数级重试计数，0-based）。
- *   复用旧 key 会被 unique 约束 + DO NOTHING 静默吞掉——这是 memory 重点标注的陷阱。
- *
- * 为什么骨架要尽早落盘：
- *   Inngest Cloud 的 serve 注册需要函数对象存在；先把清单坐实，便于：
- *     (a) 部署链路在 MAS 动工前就能 PUT sync 通过
- *     (b) 手工 inngest.send('task/proofread.requested') 验证 event → handler 链路
- *     (c) 后续 MAS 只动 step.run 内部而不牵动注册层
- *
- * 不做的事（v1.0 范围外）：
- *   - 跨模型交叉校验（confidence.crossModel weight = 0）
- *   - 真实 AI 调用（骨架阶段仅 TODO）
- *   - 部分步骤的并发控制（verify-each-quote 后续会用 step.parallel）
- */
+import { inngest } from '@/inngest/client';
+import { DEFAULT_GENERATION_OPTIONS, MODEL_ID, defaultModel } from '@/lib/ai/client';
+import { CONFIDENCE_ALGO_VERSION, computeConfidence } from '@/lib/ai/confidence';
+import { PROMPT_VERSION, loadPromptRaw } from '@/lib/ai/prompts';
+import { buildResultIdempotencyKey } from '@/lib/idempotency';
+import {
+  createReportSnapshot,
+  getReport,
+  getTaskContext,
+  saveQuotes,
+  saveVerificationResult,
+  updateTaskProgress,
+  updateTaskStatus,
+} from '@/lib/services/task';
+
+// ─── Zod schema: LLM extract output ──────────────────────────────────────────
+const ExtractedQuoteSchema = z.object({
+  quote: z.string(),
+  context_before: z.string().optional().default(''),
+  context_after: z.string().optional().default(''),
+  author_explanation: z.string().optional().default(''),
+  location_hint: z.string().optional().default(''),
+  source_work: z.string().optional().default(''),
+  para_index: z.number().int().min(0),
+  chapter: z.string().optional().default(''),
+});
+const ExtractOutputSchema = z.array(ExtractedQuoteSchema);
+
+// ─── Zod schema: LLM verify output ───────────────────────────────────────────
+const VerifyOutputSchema = z.object({
+  quote: z.string(),
+  text_accuracy: z.object({
+    match_status: z.enum(['match', 'partial', 'mismatch', 'not_found']),
+    differences: z.string().default(''),
+    original_text: z.string().default(''),
+    variant_note: z.string().default(''),
+  }),
+  interpretation_accuracy: z.object({
+    match_status: z.enum(['match', 'partial', 'mismatch', 'not_applicable']),
+    differences: z.string().default(''),
+    editor_suggestion: z.string().default(''),
+  }),
+  context_appropriateness: z.object({
+    match_status: z.enum(['match', 'partial', 'mismatch', 'not_applicable']),
+    differences: z.string().default(''),
+    editor_suggestion: z.string().default(''),
+  }),
+  reference_hits: z
+    .array(z.object({ snippet: z.string(), location: z.string().default('') }))
+    .default([]),
+  overall_remark: z.string().default(''),
+});
+
+function llmMatchToDb(
+  status: 'match' | 'partial' | 'mismatch' | 'not_found',
+): 'MATCH' | 'PARTIAL_MATCH' | 'NOT_MATCH' | 'NOT_FOUND_IN_REF' {
+  const map = {
+    match: 'MATCH',
+    partial: 'PARTIAL_MATCH',
+    mismatch: 'NOT_MATCH',
+    not_found: 'NOT_FOUND_IN_REF',
+  } as const;
+  return map[status];
+}
+
+function llmMatchToVerdict(
+  status: 'match' | 'partial' | 'mismatch' | 'not_found',
+): 'MATCH' | 'VARIANT' | 'MISMATCH' | 'NOT_FOUND_IN_REF' {
+  const map = {
+    match: 'MATCH',
+    partial: 'VARIANT',
+    mismatch: 'MISMATCH',
+    not_found: 'NOT_FOUND_IN_REF',
+  } as const;
+  return map[status];
+}
+
 export const proofreadRunFn = inngest.createFunction(
   {
     id: 'task-proofread-run',
-    name: 'task · 校对主工作流（骨架）',
-    // 整个函数级重试：Inngest 默认 4 次；对于长任务，降低到 2 次避免雪崩式消耗配额
-    // 每次 function-level 重试会让 ctx.attempt 递增，驱动新的 idempotency_key
+    name: 'task · 校对主工作流',
     retries: 2,
-    // 并发上限：同 taskId 只允许一个在飞，避免手误重复触发（MS-G-02 暂停/恢复不算双跑）
     concurrency: { key: 'event.data.taskId', limit: 1 },
   },
   { event: 'task/proofread.requested' },
   async ({ event, step, attempt, logger }) => {
     const { taskId, userId, triggeredBy, requestedAt } = event.data;
-    logger.info(
-      { taskId, userId, triggeredBy, requestedAt, attempt },
-      '[proofread-run] 启动 · 骨架占位',
-    );
+    logger.info({ taskId, userId, triggeredBy, requestedAt, attempt }, '[proofread-run] 启动');
 
     // ─── S1: load-task ────────────────────────────────────────────────
-    // TODO(MAS-1): 查 task + manuscript + references + user；校验 status=VERIFYING；
-    //              若 status 非法（COMPLETED/CANCELED）直接 return，不报错（幂等）
     const ctx = await step.run('load-task', async () => {
-      // placeholder：返回事件体 + attempt 便于下游 TODO 填充时能编译通过
-      return { taskId, userId, attempt, quoteIds: [] as string[] };
+      const context = await getTaskContext(taskId);
+      if (!context) throw new Error(`task ${taskId} not found`);
+
+      const { task, paragraphs } = context;
+      if (task.status === 'COMPLETED' || task.status === 'CANCELED') {
+        logger.info({ taskId, status: task.status }, '[proofread-run] 幂等跳过');
+        return null;
+      }
+
+      return {
+        taskId: task.id,
+        manuscriptId: task.manuscriptId,
+        userId: task.userId,
+        attempt,
+        paragraphs,
+      };
     });
 
-    // ─── S2: parse-manuscript ─────────────────────────────────────────
-    // TODO(MAS-2): 按 manuscript.mime 走 docx/pdf/epub 解析器；
-    //              落 paragraph 行（含 text_normalized：OpenCC 繁简 + 异体字归一）
-    await step.run('parse-manuscript', async () => {
-      // placeholder
-      return { paragraphCount: 0 };
+    if (!ctx) return { ok: true, taskId, skipped: true };
+
+    // ─── S2: moderation-gate ──────────────────────────────────────────
+    const moderationResult = await step.run('moderation-gate', async () => {
+      // v1.0 骨架：直接通过（MAS-3 填充真实审核调用）
+      return { rejected: false };
     });
 
-    // ─── S3: moderation-gate ──────────────────────────────────────────
-    // TODO(MAS-3): 对稿件抽样或整体做一次 DeepSeek 调用；
-    //              若 isModerationRejection() → 写 task.status=REJECTED_BY_MODERATION 并 return
-    await step.run('moderation-gate', async () => {
-      return { rejected: false as boolean };
-    });
-
-    // ─── S4: extract-quotes ───────────────────────────────────────────
-    // TODO(MAS-3): prompts/v1/extract.txt + generateObject + zod 宽容 schema；
-    //              批量落 quote 行，拿到 quoteIds 传给下游 verify
-    await step.run('extract-quotes', async () => {
-      return { quoteIds: [] as string[] };
-    });
-
-    // ─── S5: verify-each-quote ────────────────────────────────────────
-    // TODO(MAS-4): 对每条 quote 走 verify prompt；当前骨架只演示 key 构造契约。
-    //              真实实现应：
-    //                1. step.run(`verify-${quoteId}`, ...) 或 step.parallel 批次化
-    //                2. INSERT verification_result ... idempotency_key=<key> ... ON CONFLICT DO NOTHING
-    //                3. stripLlmSelfScores(raw) 先剥离 LLM 自评分（real.md #2）
-    //                4. 落 result_reference_hit（可选 M:N）
-    for (const quoteId of ctx.quoteIds) {
-      const idempotencyKey = buildResultIdempotencyKey({
-        taskId: ctx.taskId,
-        quoteId,
-        attemptN: attempt,
-      });
-      await step.run(`verify-${quoteId}`, async () => {
-        logger.debug({ quoteId, idempotencyKey }, '[proofread-run] verify TODO');
-        return { ok: true };
-      });
+    if (moderationResult.rejected) {
+      await updateTaskStatus(taskId, 'REJECTED_BY_MODERATION');
+      return { ok: true, taskId, rejected: true };
     }
 
-    // ─── S6: map-references ───────────────────────────────────────────
-    // TODO(MAS-4): prompts/v1/map.txt → result_reference_hit 批插；
-    //              hit=true/false 与 snippet/location_json 一并写入（ADR-011）
-    await step.run('map-references', async () => {
-      return { hitCount: 0 };
+    // ─── S3: extract-quotes ───────────────────────────────────────────
+    const extracted = await step.run('extract-quotes', async () => {
+      const extractPrompt = loadPromptRaw('extract');
+
+      // 拼装书稿文本（[段落N] 格式）
+      const manuscriptText = ctx.paragraphs.map((p) => `[段落${p.seq}]\n${p.text}`).join('\n\n');
+
+      const { text: rawOutput } = await generateText({
+        model: defaultModel,
+        ...DEFAULT_GENERATION_OPTIONS,
+        messages: [
+          { role: 'system', content: extractPrompt.text },
+          { role: 'user', content: manuscriptText },
+        ],
+      });
+
+      // 提取 JSON（LLM 可能含 markdown 代码块）
+      const jsonMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)```/);
+      const jsonStr = jsonMatch?.[1] ?? rawOutput.trim();
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch {
+        logger.warn({ rawOutput }, '[proofread-run] extract JSON parse failed');
+        return { quotes: [], promptSha: extractPrompt.sha256 };
+      }
+
+      const result = ExtractOutputSchema.safeParse(parsed);
+      if (!result.success) {
+        logger.warn({ issues: result.error.issues }, '[proofread-run] extract schema mismatch');
+        return { quotes: [], promptSha: extractPrompt.sha256 };
+      }
+
+      return { quotes: result.data, promptSha: extractPrompt.sha256 };
     });
 
-    // ─── S7: compute-confidence ───────────────────────────────────────
-    // TODO(MAS-4): 读回 verification_result 全部行，遍历调 computeConfidence(signals)；
-    //              UPDATE verification_result SET confidence=... WHERE id=...
-    //              注意：T-03 触发器把 confidence 列入 immutable 字段——只能在初次 INSERT 时写入
-    //              所以实际应在 S5 插入时就计算好，此 step 仅兜底校验 / 无事
-    await step.run('compute-confidence', async () => {
-      return { scored: 0 };
+    if (extracted.quotes.length === 0) {
+      await updateTaskProgress(taskId, { status: 'COMPLETED', totalQuotes: 0 });
+      return { ok: true, taskId, quotesFound: 0 };
+    }
+
+    // 落库 quote 行
+    const savedQuotes = await step.run('save-quotes', async () => {
+      const rows = extracted.quotes.map((q) => {
+        const row: {
+          paragraphSeq: number;
+          quoteText: string;
+          kind: 'DIRECT' | 'INDIRECT' | 'NOTED';
+          sourceWorkHint?: string;
+          locationHint?: string;
+          contextWindow?: string;
+        } = {
+          paragraphSeq: q.para_index,
+          quoteText: q.quote,
+          kind: 'DIRECT',
+        };
+        if (q.source_work) row.sourceWorkHint = q.source_work;
+        if (q.location_hint) row.locationHint = q.location_hint;
+        const ctx =
+          q.context_before || q.context_after
+            ? `${q.context_before}\n\n${q.context_after}`.trim()
+            : undefined;
+        if (ctx) row.contextWindow = ctx;
+        return row;
+      });
+
+      const quotes = await saveQuotes(ctx.manuscriptId, rows);
+      await updateTaskProgress(taskId, { status: 'VERIFYING', totalQuotes: quotes.length });
+      return quotes.map((q) => ({
+        id: q.id,
+        quoteText: q.quoteText,
+        sourceWorkHint: q.sourceWorkHint ?? '',
+        locationHint: q.locationHint ?? '',
+        contextWindow: q.contextWindow ?? '',
+        authorExplanation:
+          extracted.quotes.find((e) => e.quote === q.quoteText)?.author_explanation ?? '',
+      }));
     });
 
-    // ─── S8: freeze-report ────────────────────────────────────────────
-    // TODO(MAS-5): 生成 report_snapshot 行；写入 frozen_at=now() 后 T-01 触发器接管只读
-    //              同步 task.status=COMPLETED，写 audit_log（action=report.frozen）
-    const frozenAt = await step.run('freeze-report', async () => new Date().toISOString());
+    // ─── S4: verify-each-quote ────────────────────────────────────────
+    // DG-m2.1：v1.0 串行（Inngest 免费层配额约束）
+    const verifyPrompt = loadPromptRaw('verify');
+    let verifiedCount = 0;
 
-    logger.info({ taskId, frozenAt, attempt }, '[proofread-run] 骨架完成（真实逻辑 TODO）');
-    return { ok: true, taskId, frozenAt, attempt };
+    for (const q of savedQuotes) {
+      const idempotencyKey = buildResultIdempotencyKey({
+        taskId: ctx.taskId,
+        quoteId: q.id,
+        attemptN: attempt,
+      });
+
+      await step.run(`verify-${q.id}`, async () => {
+        const userMsg = [
+          `引用文字：${q.quoteText}`,
+          `作者解释：${q.authorExplanation}`,
+          `引用前文：${q.contextWindow}`,
+          `引用后文：`,
+          q.locationHint ? `位置提示：${q.locationHint}` : '',
+          `原文来源：${q.sourceWorkHint || '未知'}`,
+          `（无参考文献内容可用，请基于已知知识判断）`,
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        const { text: rawOutput } = await generateText({
+          model: defaultModel,
+          ...DEFAULT_GENERATION_OPTIONS,
+          messages: [
+            { role: 'system', content: verifyPrompt.text },
+            { role: 'user', content: userMsg },
+          ],
+        });
+
+        const jsonMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)```/);
+        const jsonStr = jsonMatch?.[1] ?? rawOutput.trim();
+
+        let verifyResult: z.infer<typeof VerifyOutputSchema> | null = null;
+        try {
+          const parsedRaw = JSON.parse(jsonStr);
+          const parsed = VerifyOutputSchema.safeParse(parsedRaw);
+          if (parsed.success) verifyResult = parsed.data;
+        } catch {
+          logger.warn({ quoteId: q.id }, '[proofread-run] verify JSON parse failed');
+        }
+
+        if (!verifyResult) {
+          await saveVerificationResult({
+            taskId: ctx.taskId,
+            quoteId: q.id,
+            matchStatus: 'NOT_FOUND_IN_REF',
+            verdictTextAccuracy: {
+              verdict: 'NOT_FOUND_IN_REF',
+              explanation: 'LLM 返回格式异常，无法解析',
+            },
+            verdictInterpretation: {
+              verdict: 'NOT_APPLICABLE',
+              explanation: '',
+            },
+            verdictContext: {
+              verdict: 'NOT_APPLICABLE',
+              explanation: '',
+            },
+            confidence: '0',
+            confidenceBreakdown: {
+              refHit: 0,
+              locationValid: 0,
+              crossModel: 0,
+              weights: { w1: 0.5, w2: 0.5, w3: 0 },
+              algoVersion: CONFIDENCE_ALGO_VERSION,
+            },
+            idempotencyKey,
+            attemptCount: attempt + 1,
+          });
+          return { ok: false };
+        }
+
+        // 客观置信度（real.md #2：不用 LLM 自评）
+        const refHit = verifyResult.reference_hits.length > 0 ? 1 : 0;
+        const locationValid = verifyResult.reference_hits.some((h) => h.location.length > 0)
+          ? 1
+          : 0;
+        const conf = computeConfidence({ refHit, locationValid, crossModel: 0 });
+
+        await saveVerificationResult({
+          taskId: ctx.taskId,
+          quoteId: q.id,
+          matchStatus: llmMatchToDb(verifyResult.text_accuracy.match_status),
+          verdictTextAccuracy: {
+            verdict: llmMatchToVerdict(verifyResult.text_accuracy.match_status),
+            explanation: verifyResult.text_accuracy.differences || verifyResult.overall_remark,
+          },
+          verdictInterpretation: {
+            verdict: (() => {
+              const m = verifyResult.interpretation_accuracy.match_status;
+              if (m === 'match') return 'CONSISTENT';
+              if (m === 'partial') return 'PARTIAL';
+              if (m === 'mismatch') return 'DIVERGENT';
+              return 'NOT_APPLICABLE';
+            })(),
+            explanation: verifyResult.interpretation_accuracy.differences,
+          },
+          verdictContext: {
+            verdict: (() => {
+              const m = verifyResult.context_appropriateness.match_status;
+              if (m === 'match') return 'APPROPRIATE';
+              if (m === 'partial') return 'AMBIGUOUS';
+              if (m === 'mismatch') return 'OUT_OF_CONTEXT';
+              return 'NOT_APPLICABLE';
+            })(),
+            explanation: verifyResult.context_appropriateness.differences,
+          },
+          confidence: String(conf.value),
+          confidenceBreakdown: {
+            refHit: conf.signals.refHit,
+            locationValid: conf.signals.locationValid,
+            crossModel: conf.signals.crossModel,
+            weights: {
+              w1: conf.weights.refHit,
+              w2: conf.weights.locationValid,
+              w3: conf.weights.crossModel,
+            },
+            algoVersion: conf.algoVersion,
+          },
+          rawResponseSnapshot: { raw: rawOutput },
+          idempotencyKey,
+          attemptCount: attempt + 1,
+        });
+
+        return { ok: true };
+      });
+
+      verifiedCount++;
+      await updateTaskProgress(taskId, { verifiedQuotes: verifiedCount });
+    }
+
+    // ─── S5: freeze-report ────────────────────────────────────────────
+    const frozenAt = await step.run('freeze-report', async () => {
+      const report = await getReport(taskId);
+      const matchCount = report?.results.filter((r) => r.matchStatus === 'MATCH').length ?? 0;
+      const partialCount =
+        report?.results.filter((r) => r.matchStatus === 'PARTIAL_MATCH').length ?? 0;
+      const notMatchCount =
+        report?.results.filter((r) => r.matchStatus === 'NOT_MATCH').length ?? 0;
+      const notFoundCount =
+        report?.results.filter((r) => r.matchStatus === 'NOT_FOUND_IN_REF').length ?? 0;
+
+      const meanConf =
+        report && report.results.length > 0
+          ? report.results.reduce((sum, r) => sum + Number(r.confidence), 0) / report.results.length
+          : 0;
+
+      await createReportSnapshot({
+        taskId,
+        frozenAt: new Date(),
+        versionStampJson: {
+          modelId: MODEL_ID,
+          modelProvider: 'siliconflow',
+          promptVersions: {
+            extract: PROMPT_VERSION,
+            verify: PROMPT_VERSION,
+            map: PROMPT_VERSION,
+          },
+          sourceRefsHash: '',
+          confidenceAlgoVersion: CONFIDENCE_ALGO_VERSION,
+        },
+        resultsAggregate: {
+          totalQuotes: savedQuotes.length,
+          matchCount,
+          partialMatchCount: partialCount,
+          notMatchCount,
+          notFoundCount,
+          rejectedByModerationCount: 0,
+          meanConfidence: Math.round(meanConf * 1000) / 1000,
+        },
+      });
+
+      await updateTaskProgress(taskId, {
+        status: 'COMPLETED',
+        verifiedQuotes: verifiedCount,
+      });
+
+      return new Date().toISOString();
+    });
+
+    logger.info({ taskId, frozenAt, quotesVerified: verifiedCount }, '[proofread-run] 完成');
+    return { ok: true, taskId, frozenAt, quotesVerified: verifiedCount };
   },
 );
