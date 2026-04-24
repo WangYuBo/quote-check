@@ -56,8 +56,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2. 上传到 Vercel Blob
-  const { url, pathname } = await uploadManuscriptBlob(file.name, buffer, mimeType);
+  // 2. 上传到 Vercel Blob（若 token 是 placeholder 则跳过，本地开发用 local-only 占位）
+  let url = `local://manuscripts/${Date.now()}-${file.name}`;
+  let pathname = url;
+  const blobToken = process.env['BLOB_READ_WRITE_TOKEN'] ?? '';
+  if (!blobToken.includes('placeholder')) {
+    const uploaded = await uploadManuscriptBlob(file.name, buffer, mimeType);
+    url = uploaded.url;
+    pathname = uploaded.pathname;
+  }
 
   // 3. 落库 manuscript
   const doc = await createManuscript({
