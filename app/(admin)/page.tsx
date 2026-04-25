@@ -4,14 +4,14 @@ import { Activity, DollarSign, FileText, Users } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getDashboardStats, getTaskTrend } from '@/lib/services/admin';
-import { requireAdmin } from '@/lib/auth/admin-guard';
+import { requireAdminPage } from '@/lib/auth/admin-guard';
 
 /* ─────────────────────────────────────────────────
  * Dashboard 页面（Server Component）
  * ───────────────────────────────────────────────── */
 
 export default async function AdminDashboardPage() {
-  await requireAdmin();
+  await requireAdminPage();
   const [stats, trend] = await Promise.all([
     getDashboardStats(),
     getTaskTrend(30),

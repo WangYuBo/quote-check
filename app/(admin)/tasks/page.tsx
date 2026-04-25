@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { requireAdmin } from '@/lib/auth/admin-guard';
+import { requireAdminPage } from '@/lib/auth/admin-guard';
 import { listAllTasks } from '@/lib/services/admin';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -25,7 +25,7 @@ interface PageProps {
 }
 
 export default async function AdminTasksPage({ searchParams }: PageProps) {
-  await requireAdmin();
+  await requireAdminPage();
   const params = await searchParams;
 
   return (

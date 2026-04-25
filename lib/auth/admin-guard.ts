@@ -4,6 +4,7 @@
  * requireAdmin() — 检查登录 + role === 'admin'
  * withAdminAuth() — Route Handler 包装
  */
+import { redirect } from 'next/navigation';
 import { NextResponse } from 'next/server';
 
 import { auth } from '@/lib/auth';
@@ -12,6 +13,30 @@ export interface AdminUser {
   id: string;
   email: string;
   name: string;
+}
+
+/**
+ * Server Component 页面守卫：未登录 → redirect(/login)，非 admin → redirect(/)
+ */
+export async function requireAdminPage(): Promise<AdminUser> {
+  const { headers } = await import('next/headers');
+  const headerStore = await headers();
+
+  const session = await auth.api.getSession({ headers: headerStore });
+
+  if (!session?.user?.id) {
+    redirect('/login');
+  }
+
+  if (session.user.role !== 'admin') {
+    redirect('/');
+  }
+
+  return {
+    id: session.user.id,
+    email: session.user.email ?? '',
+    name: session.user.name ?? '',
+  };
 }
 
 /**
