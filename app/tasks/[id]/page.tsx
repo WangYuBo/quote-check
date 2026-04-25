@@ -1,5 +1,6 @@
 'use client';
 
+import { ShieldOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { use, useEffect, useState } from 'react';
 
@@ -95,9 +96,21 @@ export default function TaskPage({ params }: { params: Promise<{ id: string }> }
             )}
 
             {task.status === 'REJECTED_BY_MODERATION' && (
-              <p className="text-sm text-(--color-fg-muted) bg-gray-50 rounded-xl px-4 py-3">
-                本书稿内容未通过审核，无法继续核查。如有疑问请联系支持。
-              </p>
+              <div
+                className="rounded-xl px-4 py-5 space-y-3 opacity-60"
+                style={{
+                  background:
+                    'repeating-linear-gradient(-45deg,#f3f4f6,#f3f4f6 4px,#e5e7eb 4px,#e5e7eb 8px)',
+                }}
+              >
+                <div className="flex items-center justify-center gap-2 text-(--color-fg-muted)">
+                  <ShieldOff size={20} />
+                  <span className="text-sm font-medium">审核未通过，无法校对</span>
+                </div>
+                <p className="text-xs text-(--color-fg-muted) text-center">
+                  本书稿内容未通过平台内容审核，核查任务已终止。如有疑问请联系支持。
+                </p>
+              </div>
             )}
 
             {task.status === 'PENDING_PARSE' && (
