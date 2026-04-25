@@ -16,7 +16,7 @@ interface TaskStatus {
 const STATUS_LABELS: Record<string, string> = {
   PENDING_PARSE: '等待中…',
   VERIFYING: '正在核查…',
-  PAUSED_COST: '已暂停（成本预警）',
+  PAUSED_COST: '已暂停',
   REJECTED_BY_MODERATION: '内容审核未通过',
   COMPLETED: '核查完成',
   CANCELED: '已取消',
@@ -101,12 +101,12 @@ export default function TaskPage({ params }: { params: Promise<{ id: string }> }
             )}
 
             {task.status === 'PAUSED_COST' && (
-              <div className="border border-amber-200 bg-amber-50 rounded-xl px-4 py-4 space-y-2">
-                <div className="flex items-center gap-2 text-amber-700">
+              <div className="border border-(--color-border) rounded-xl px-4 py-4 space-y-2">
+                <div className="flex items-center gap-2 text-(--color-fg-muted)">
                   <PauseCircle size={18} />
-                  <span className="text-sm font-medium">已暂停（费用超出预估 1.5 倍）</span>
+                  <span className="text-sm font-medium">任务已暂停</span>
                 </div>
-                <p className="text-xs text-amber-600">
+                <p className="text-xs text-(--color-fg-muted)">
                   如需继续，请联系支持重新发起任务。已完成的引文核查结果已保存。
                 </p>
               </div>

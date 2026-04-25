@@ -48,11 +48,10 @@ export async function POST(req: NextRequest) {
       {
         requiresConfirm: true,
         estimate: {
-          quoteCountEstimate: estimate.quoteCountEstimate,
-          estimatedFen: estimate.estimatedFen,
+          charCount,
+          kiloChars: Math.ceil(charCount / 1000),
+          unitPrice: '¥3/千字',
           estimatedDisplay: formatFenAsYuan(estimate.estimatedFen),
-          errorMarginPct: estimate.errorMarginPct,
-          thresholdDisplay: formatFenAsYuan(COST_CONFIRM_THRESHOLD_FEN),
         },
       },
       { status: 402 },
@@ -71,7 +70,8 @@ export async function POST(req: NextRequest) {
   // 立即推进到 VERIFYING，再发事件
   await updateTaskStatus(newTask.id, 'VERIFYING');
 
-  await inngest.send({
+  // 非阻塞发送 Inngest 事件，不阻塞用户响应
+  inngest.send({
     name: 'task/proofread.requested',
     data: {
       taskId: newTask.id,
@@ -79,6 +79,8 @@ export async function POST(req: NextRequest) {
       triggeredBy: 'user',
       requestedAt: new Date().toISOString(),
     },
+  }).catch((err) => {
+    console.error('[inngest] send proofread.requested failed', err, { taskId: newTask.id });
   });
 
   return NextResponse.json(
@@ -86,9 +88,10 @@ export async function POST(req: NextRequest) {
       taskId: newTask.id,
       displayId: newTask.displayId,
       estimate: {
-        estimatedFen: estimate.estimatedFen,
+        charCount,
+        kiloChars: Math.ceil(charCount / 1000),
+        unitPrice: '¥3/千字',
         estimatedDisplay: formatFenAsYuan(estimate.estimatedFen),
-        quoteCountEstimate: estimate.quoteCountEstimate,
       },
     },
     { status: 201 },
