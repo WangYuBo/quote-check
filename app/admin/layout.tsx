@@ -20,9 +20,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <AppSidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
         <div className="flex flex-1 flex-col overflow-hidden">
           <AdminHeader />
-          <main className="flex-1 overflow-auto p-6">
-            {children}
-          </main>
+          <main className="flex-1 overflow-auto p-6">{children}</main>
         </div>
       </div>
     </ThemeProvider>
