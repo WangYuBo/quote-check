@@ -89,3 +89,69 @@ body {
   font-family: var(--font-serif);
   line-height: 1.85;
 }
+
+/* ═══════════════════════════════════════
+   shadcn/ui CSS Variables (HSL format)
+   为管理后台提供组件样式变量
+   ═══════════════════════════════════════ */
+
+:root {
+  --shadcn-background: 0 0% 100%;
+  --shadcn-foreground: 222.2 84% 4.9%;
+  --shadcn-card: 0 0% 100%;
+  --shadcn-card-foreground: 222.2 84% 4.9%;
+  --shadcn-popover: 0 0% 100%;
+  --shadcn-popover-foreground: 222.2 84% 4.9%;
+  --shadcn-primary: 222.2 47.4% 11.2%;
+  --shadcn-primary-foreground: 210 40% 98%;
+  --shadcn-secondary: 210 40% 96.1%;
+  --shadcn-secondary-foreground: 222.2 47.4% 11.2%;
+  --shadcn-muted: 210 40% 96.1%;
+  --shadcn-muted-foreground: 215.4 16.3% 46.9%;
+  --shadcn-accent: 210 40% 96.1%;
+  --shadcn-accent-foreground: 222.2 47.4% 11.2%;
+  --shadcn-destructive: 0 84.2% 60.2%;
+  --shadcn-destructive-foreground: 210 40% 98%;
+  --shadcn-border: 214.3 31.8% 91.4%;
+  --shadcn-input: 214.3 31.8% 91.4%;
+  --shadcn-ring: 222.2 84% 4.9%;
+  --shadcn-radius: 0.5rem;
+  --shadcn-sidebar-background: 0 0% 98%;
+  --shadcn-sidebar-foreground: 240 5.3% 26.1%;
+  --shadcn-sidebar-primary: 240 5.9% 10%;
+  --shadcn-sidebar-primary-foreground: 0 0% 98%;
+  --shadcn-sidebar-accent: 240 4.8% 95.9%;
+  --shadcn-sidebar-accent-foreground: 240 5.9% 10%;
+  --shadcn-sidebar-border: 220 13% 91%;
+  --shadcn-sidebar-ring: 217.2 91.2% 59.8%;
+}
+
+.dark {
+  --shadcn-background: 222.2 84% 4.9%;
+  --shadcn-foreground: 210 40% 98%;
+  --shadcn-card: 222.2 84% 4.9%;
+  --shadcn-card-foreground: 210 40% 98%;
+  --shadcn-popover: 222.2 84% 4.9%;
+  --shadcn-popover-foreground: 210 40% 98%;
+  --shadcn-primary: 210 40% 98%;
+  --shadcn-primary-foreground: 222.2 47.4% 11.2%;
+  --shadcn-secondary: 217.2 32.6% 17.5%;
+  --shadcn-secondary-foreground: 210 40% 98%;
+  --shadcn-muted: 217.2 32.6% 17.5%;
+  --shadcn-muted-foreground: 215 20.2% 65.1%;
+  --shadcn-accent: 217.2 32.6% 17.5%;
+  --shadcn-accent-foreground: 210 40% 98%;
+  --shadcn-destructive: 0 62.8% 30.6%;
+  --shadcn-destructive-foreground: 210 40% 98%;
+  --shadcn-border: 217.2 32.6% 17.5%;
+  --shadcn-input: 217.2 32.6% 17.5%;
+  --shadcn-ring: 212.7 26.8% 83.9%;
+  --shadcn-sidebar-background: 240 5.9% 10%;
+  --shadcn-sidebar-foreground: 240 4.8% 95.9%;
+  --shadcn-sidebar-primary: 224.3 76.3% 48%;
+  --shadcn-sidebar-primary-foreground: 0 0% 100%;
+  --shadcn-sidebar-accent: 240 3.7% 15.9%;
+  --shadcn-sidebar-accent-foreground: 240 4.8% 95.9%;
+  --shadcn-sidebar-border: 240 3.7% 15.9%;
+  --shadcn-sidebar-ring: 217.2 91.2% 59.8%;
+}
