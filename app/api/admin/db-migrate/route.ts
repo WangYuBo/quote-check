@@ -10,7 +10,15 @@ import { sql } from 'drizzle-orm';
  * 执行库的所有迁移文件（按文件名排序）。
  * 幂等：CREATE TABLE IF NOT EXISTS + ALTER TABLE 容错。
  */
+export const GET = withAdminAuth(async () => {
+  return runMigrations();
+});
+
 export const POST = withAdminAuth(async () => {
+  return runMigrations();
+});
+
+async function runMigrations() {
   const results: string[] = [];
 
   try {
@@ -45,4 +53,4 @@ export const POST = withAdminAuth(async () => {
       { status: 500 },
     );
   }
-});
+}
