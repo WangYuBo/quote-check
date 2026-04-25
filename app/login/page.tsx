@@ -19,7 +19,7 @@ export default function LoginPage() {
 
     const endpoint = mode === 'signin' ? '/api/auth/sign-in/email' : '/api/auth/sign-up/email';
     const body: Record<string, string> = { email, password };
-    if (mode === 'signup') body.name = name;
+    if (mode === 'signup') body['name'] = name;
 
     const res = await fetch(endpoint, {
       method: 'POST',
