@@ -67,7 +67,7 @@ const VERDICT_LABEL: Record<string, string> = {
 function matchColor(status: string): string {
   if (status === 'MATCH') return 'text-(--color-verdict-match)';
   if (status === 'PARTIAL_MATCH') return 'text-(--color-verdict-variant)';
-  if (status === 'NOT_FOUND_IN_REF') return 'text-(--color-fg)';
+  if (status === 'NOT_FOUND_IN_REF') return 'text-gray-900';
   return 'text-(--color-verdict-notmatch)';
 }
 
@@ -78,6 +78,7 @@ function confidenceBg(confidence: number): string {
 
 function VerifyCard({ result }: { result: VerifyResult }) {
   const conf = Number(result.confidence);
+  const confPct = (conf * 100).toFixed(0);
   const lowConf = conf < 0.6;
 
   return (
@@ -85,21 +86,20 @@ function VerifyCard({ result }: { result: VerifyResult }) {
       {/* 引文头部 */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 space-y-1">
-          <p className="font-medium text-(--color-fg) leading-snug">「{result.quoteText}」</p>
+          <p className="font-medium text-gray-900 leading-snug">「{result.quoteText}」</p>
           {result.sourceWorkHint && (
             <p className="text-xs text-(--color-fg-muted)">出自 {result.sourceWorkHint}</p>
           )}
         </div>
-        <span className={`text-xs font-medium shrink-0 ${matchColor(result.matchStatus)}`}>
-          {MATCH_LABEL[result.matchStatus] ?? result.matchStatus}
-        </span>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span className={`text-xs font-medium ${matchColor(result.matchStatus)}`}>
+            {MATCH_LABEL[result.matchStatus] ?? result.matchStatus}
+          </span>
+          <span className={`text-[11px] ${lowConf ? 'text-yellow-700' : 'text-(--color-fg-muted)'}`}>
+            置信度 {confPct}%
+          </span>
+        </div>
       </div>
-
-      {lowConf && (
-        <p className="text-xs bg-yellow-100 text-yellow-800 rounded-lg px-3 py-1.5">
-          置信度较低（{(conf * 100).toFixed(0)}%），建议人工优先复核
-        </p>
-      )}
 
       {/* 三维度 */}
       <div className="grid grid-cols-3 gap-3 text-xs">
