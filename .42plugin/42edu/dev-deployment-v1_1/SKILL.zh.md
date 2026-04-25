@@ -1,189 +1,177 @@
 ---
 name: dev-deployment-v1
-description: "用于将 Next.js 项目部署到 EdgeOne Pages - 自动检测 SSG/SSR 项目类型，支持本地 CLI 部署或 CNB 流水线，处理环境变量和区域配置（global/overseas）。"
-version: "1.0"
+description: "将 quote-check（Next.js SSR）部署到 Vercel——vercel CLI 部署、环境变量管理、Inngest 同步、迁移与集成检查。"
+version: "1.1"
 ---
 
-# dev-deployment-v1: Next.js 部署到 EdgeOne Pages
+# dev-deployment-v1.1: Next.js SSR → Vercel 部署
 
 ## 概述
 
-将 Next.js 项目部署到 EdgeOne Pages，自动检测项目类型。支持本地 CLI 部署和 CNB（Cloud Native Build）流水线部署两种方式。
+将 quote-check 项目（Next.js 16 App Router · SSR）部署到 Vercel。项目使用 Fluid Compute（默认），非 Edge Functions。
 
-## 何时使用
+此技能仅适用于 Vercel 部署。**不用于** EdgeOne Pages、Netlify 等。
 
-- 将 Next.js 项目部署到 EdgeOne Pages
-- 为 EdgeOne 设置 CNB CI/CD 流水线
-- 首次部署需要配置环境变量
-- 更新现有的 EdgeOne Pages 部署
+## 项目栈确认
 
-**不要用于：**
-- 非 Next.js 项目
-- 部署到其他平台（Vercel、Netlify 等）
+| 维度 | 值 |
+|------|-----|
+| 框架 | Next.js 16 (App Router) |
+| 渲染 | SSR（Fluid Compute），非 SSG |
+| 数据库 | Neon PostgreSQL（外置，非 Vercel Marketplace） |
+| 队列 | Inngest Cloud（外置） |
+| AI | 硅基流动（DeepSeek，外置 API） |
+| 存储 | Vercel Blob |
+| 认证 | Better Auth |
+| 配置 | `vercel.json`（`{ "framework": "nextjs" }`）|
 
-## 快速参考
+## 前置条件
 
-| 任务 | 操作 |
-|------|------|
-| 检测项目类型 | 检查 `out/` 文件夹（SSG）或 `.next/` 文件夹（SSR） |
-| 检查 CLI 安装 | `which edgeone` 或 `edgeone --version` |
-| 安装 CLI | `bun add -g edgeone` |
-| 本地部署（SSG） | `edgeone pages deploy ./out -n <项目名> -a <区域>` |
-| 本地部署（SSR） | `edgeone pages deploy . -n <项目名> -a <区域>` |
-| CNB 部署 | 创建 `.cnb.yml` 并推送到仓库 |
+1. Vercel CLI 已安装：`vercel --version`
+2. Vercel 登录态：`vercel whoami`
+3. 已配置 Vercel 项目（`vercel link`）
+4. 已设置环境变量（见下方 §环境变量）
 
-## 工作流程
-
-### 步骤 1：检测项目类型
+### 安装 CLI
 
 ```bash
-# 检查项目类型
-if [ -d "out" ] && [ "$(ls -A out 2>/dev/null)" ]; then
-    echo "检测到 SSG 项目"
-elif [ -d ".next" ]; then
-    echo "检测到 SSR 项目"
-else
-    echo "请先构建项目: bun run build"
-fi
+npm i -g vercel
+vercel login
 ```
 
-| 类型 | 检测方式 | 部署目标 |
-|------|----------|----------|
-| SSG | `out/` 文件夹存在且非空 | `./out` 文件夹 |
-| SSR | `.next/` 文件夹存在，无 `out/` | `.`（整个项目） |
+## 部署流程
 
-### 步骤 2：检查前置条件
+### 步骤 1：提交代码
 
-1. **EdgeOne CLI 已安装？**
-   ```bash
-   edgeone --version
-   ```
-   如未安装：`bun add -g edgeone`
-
-2. **EdgeOne 登录状态？**
-   ```bash
-   edgeone whoami
-   ```
-   如未登录：`edgeone login`
-
-### 步骤 3：从对话中提取参数
-
-**优先从用户消息中提取参数，仅询问缺失的参数：**
-
-| 参数 | 检测关键词 | 默认值 |
-|------|-----------|--------|
-| 项目名 | `-n`、`name`、引号包裹的字符串如 `"my-project"` | 询问用户 |
-| 区域 | `overseas`/`海外` → overseas；`global`/`国内`/`中国` → global | 询问用户 |
-| 方式 | `cnb`/`流水线` → CNB；`local`/`本地` → 本地推送 | 本地推送 |
-
-**示例：** 用户说"把这个项目用 skill-test01 部署，使用海外节点"
-→ 提取：name=`skill-test01`，area=`overseas`，method=本地推送
-
-仅询问对话中未提及的参数。
-
-### 步骤 4：部署
-
-#### 方式 A：本地推送
-
-**SSG 项目：**
 ```bash
-edgeone pages deploy ./out -n <项目名> -a <区域>
+git add -A
+git commit -m "<语义化提交信息>"
 ```
 
-**SSR 项目：**
+### 步骤 2：部署到 Vercel
 
-首次部署（项目不存在）：
-1. 直接部署创建项目：
 ```bash
-edgeone pages deploy . -n <项目名> -a <区域>
-```
-2. 部署成功后，输出提醒：
-```
-请在 项目设置-环境变量 中填写项目的环境变量，否则可能影响项目正常运行。
-https://pages.edgeone.ai/zh/document/build-guide#c51018ad-71af-43a6-83af-acbc3690c653
+# 正式部署（生产）
+vercel --prod
 ```
 
-更新部署（项目已存在）：
+Vercel 自动执行：
+1. 安装依赖（`bun install`，Vercel 自动检测 bun.lockb）
+2. 构建（`next build`，Turbopack）
+3. 部署产物（`.next/` + serverless functions）
+4. 自动路由：`app/` 目录下路由文件自动注册为 serverless function
+
+### 步骤 3：Inngest 同步
+
+部署后，需让 Inngest Cloud 感知新函数：
+
 ```bash
-edgeone pages deploy . -n <项目名> -a <区域>
+# 登入 Inngest Cloud → Your project → "Sync" 按钮
+# 或通过 Inngest CLI（若配置了自动同步则跳过）
 ```
 
-#### 方式 B：CNB 推送
+Inngest 函数注册在 `app/api/inngest/route.ts`，所有 `inngest.createFunction` 自动暴露。
 
-1. 检查远程仓库连接：
-   ```bash
-   git remote -v
-   ```
+### 步骤 4：迁移数据库（如 schema 变更）
 
-2. 检测主分支名（用于配置 CNB 触发分支）：
-   ```bash
-   # 获取主分支名，无 git 初始化时默认 master
-   if git rev-parse --git-dir > /dev/null 2>&1; then
-       MAIN_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-       [ -z "$MAIN_BRANCH" ] && MAIN_BRANCH="master"
-   else
-       MAIN_BRANCH="master"
-   fi
-   echo "主分支: $MAIN_BRANCH"
-   ```
+```bash
+# 本地生成迁移文件（仅首次或 schema 变更时需要）
+bun run db:generate
 
-3. 检查现有 `.cnb.yml` 配置（如存在）：
-   ```bash
-   # 如果已存在 .cnb.yml，检查分支名是否匹配
-   if [ -f ".cnb.yml" ]; then
-       # 获取文件中配置的分支名（第一个顶级键，通常是 master: 或 main:）
-       CNB_BRANCH=$(grep -E "^(master|main):" .cnb.yml | head -1 | sed 's/://')
-       if [ -n "$CNB_BRANCH" ] && [ "$CNB_BRANCH" != "$MAIN_BRANCH" ]; then
-           echo "警告: .cnb.yml 中配置的分支 ($CNB_BRANCH) 与当前主分支 ($MAIN_BRANCH) 不一致"
-           echo "需要将 .cnb.yml 中的 '$CNB_BRANCH:' 替换为 '$MAIN_BRANCH:'"
-       fi
-   fi
-   ```
-   - 如果分支名不一致，修改 `.cnb.yml` 文件首行的分支名
-   - 例如：将 `master:` 改为 `main:`，或反之
+# 对 Neon 主力库执行迁移
+bun run db:migrate
 
-4. 创建或更新 `.cnb.yml`：
-   - 如果不存在，使用相应模板创建：
-     - SSG：使用 `assets/ssg-cnb-template.yml`
-     - SSR：使用 `assets/ssr-cnb-template.yml`
-   - **重要**：确保文件中的分支名与检测到的主分支名一致
+# 应用手写触发器（_hand_triggers.sql）
+bun run db:triggers
 
-5. 提醒用户：
-   - 创建包含 `EDGEONE_API_TOKEN` 的密钥仓库
-   - 更新 `.cnb.yml` 中的 imports URL
+# 验证
+bun run db:check
+```
 
-6. 提交并推送：
-   ```bash
-   git add .cnb.yml
-   git commit -m "添加 CNB 部署配置"
-   git push
-   ```
+## 环境变量
 
-## SSG 与 SSR 差异
+### 完整清单
 
-| 方面 | SSG | SSR |
-|------|-----|-----|
-| 构建产物 | `./out` 文件夹 | `.next` 文件夹 |
-| 部署目标 | 仅 `./out` | 整个项目 |
-| CNB 构建步骤 | 是（bun install + build） | 否（EdgeOne 构建） |
-| 环境变量 | 可选 | 通常需要 |
-| 首次部署 | 直接部署 | 直接部署，后配置环境变量 |
+所有环境变量由 `lib/env.ts` 的 Zod schema 统一校验。应用代码**禁止**直接 `process.env.X`。
+
+| 变量 | 说明 | 来源 |
+|------|------|------|
+| `DATABASE_URL` | Neon PostgreSQL 连接串 | Neon Dashboard |
+| `BETTER_AUTH_SECRET` | Better Auth 密钥（≥32 字符） | `openssl rand -hex 32` |
+| `BETTER_AUTH_URL` | 部署域名 | `https://<project>.vercel.app` |
+| `SILICONFLOW_API_KEY` | 硅基流动 API Key | 硅基流动控制台 |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob token | Vercel Storage |
+| `INNGEST_EVENT_KEY` | Inngest 事件 key | Inngest Cloud |
+| `INNGEST_SIGNING_KEY` | Inngest 签名 key | Inngest Cloud |
+| `LOG_LEVEL` | Pino 日志级别（默认 info） | — |
+| `TTL_DAYS` | 用户数据保留天数（默认 7） | — |
+| `DEMO_MODE` | 演示模式 | — |
+
+### 通过 Vercel CLI 设置
+
+```bash
+vercel env add DATABASE_URL
+vercel env add BETTER_AUTH_SECRET
+# ... 逐个添加
+```
+
+或通过 Vercel Dashboard > Project > Settings > Environment Variables 批量添加。
+
+### 环境变量隔离
+
+- **Production**：填真实数据库 / API key
+- **Preview**：可填 staging 数据库 / 测试 API key
+- **Development**：使用 `.env` 本地文件（不提交到 git）
+
+## 项目类型说明
+
+**重要**：本项目**不是** SSG。Next.js 16 App Router + API routes + Inngest → 必须是 SSR（Fluid Compute）。
+
+```bash
+# ✅ 正确部署方式
+vercel --prod
+
+# ❌ 错误的做法
+# vercel deploy ./out  ← 无 out/ 目录
+# edgeone pages deploy .  ← 平台不对
+```
+
+## 部署后验证清单
+
+- [ ] `GET /api/inngest` 返回函数清单（验证注册）
+- [ ] `GET /api/me/billing-summary` 返回账户摘要（验证计费）
+- [ ] `GET /api/billing/me?groupBy=month` 返回结算明细
+- [ ] Inngest Cloud 显示新函数列表（`costGuardFn` 已移除，不应出现）
+- [ ] Vercel Blob 可读可写
+- [ ] Neon 数据库连接正常
+- [ ] AI 客户端（硅基流动）可调用
+
+## 回滚
+
+```bash
+# 查看部署历史
+vercel list
+
+# 回滚到指定部署
+vercel rollback <deployment-id>
+
+# 或通过 Vercel Dashboard → Deployments → ⋮ → Rollback
+```
 
 ## 常见错误
 
-| 错误 | 失败原因 | 修复方法 |
-|------|----------|----------|
-| SSR 项目缺少环境变量 | 部署后运行时错误 | 首次部署后在 EdgeOne 控制台配置环境变量 |
-| SSG 部署目标错误 | 上传了不必要的文件 | 使用 `./out` 而非 `.` |
-| CNB 中缺少 EDGEONE_API_TOKEN | 流水线认证失败 | 创建包含 token 的密钥仓库 |
-| 使用 global 区域但调用海外 API | 中国区 API 调用被屏蔽 | 使用 `overseas` 区域 |
-| 部署前忘记构建 | SSG 没有 `out/` 文件夹 | 先运行 `bun run build` |
+| 症状 | 原因 | 修复 |
+|------|------|------|
+| 构建失败：env 校验错误 | 缺少环境变量 | `vercel env add <变量名>` |
+| Inngest 函数不触发 | 未同步 | 在 Inngest Cloud 手动同步 |
+| 数据库连接失败 | DATABASE_URL 过期 | 更新环境变量 + Redeploy |
+| Blob 上传 403 | BLOB_READ_WRITE_TOKEN 无效 | 重新生成 token |
+| AI 调用 401 | SILICONFLOW_API_KEY 失效 | 更新 API key |
+| 部署后旧函数仍存在 | 代码未提交 | `git status` 确认提交 + redeploy |
 
 ## 资源
 
-### 参考文档
-- `references/edgeone-cli-reference.md` - EdgeOne CLI 完整命令参考
-
-### 资产文件
-- `assets/ssg-cnb-template.yml` - SSG 项目的 CNB 配置模板
-- `assets/ssr-cnb-template.yml` - SSR 项目的 CNB 配置模板
+- [Vercel CLI 文档](https://vercel.com/docs/cli)
+- [Next.js 部署文档](https://nextjs.org/docs/app/building-your-application/deploying)
+- [Inngest Vercel 集成](https://inngest.com/docs/deploy/vercel)
+- [Vercel Blob](https://vercel.com/docs/storage/vercel-blob)
