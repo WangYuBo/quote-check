@@ -1,7 +1,7 @@
 ---
 name: spec-system-architecture
-description: 文史类引用校对软件 v1.0 系统架构规约——基于 TypeScript / Next.js 15 / Vercel / Inngest / Neon / Drizzle 栈，把 25 个 MS 锚定到 7 个子系统 + 16 条 ADR
-version: v1.0.0-draft
+description: 文史类引用校对软件 v1.0 系统架构规约——基于 TypeScript / Next.js 15 / Vercel / Inngest / Neon / Drizzle 栈，把 25 个 MS + A22/A23 两个新增 affordance 锚定到 9 个子系统 + 19 条 ADR
+version: v1.0.1-draft
 generated_by: dev-system-architecture skill
 depends_on:
   - .42cog/meta/meta.md
@@ -24,6 +24,7 @@ stack_lock:
   deploy: Vercel
   blob: Vercel Blob
 created: 2026-04-18
+last_updated: 2026-04-25
 ---
 
 # 系统架构规约（System Architecture）
@@ -166,7 +167,9 @@ devDependencies:
 
 ---
 
-## 4. 子系统详目（7 个）
+## 4. 子系统详目（9 个）
+
+> v1.0.1 新增 SS-8 / SS-9，分别承载 PRD 新增的 A22 用户主页 / A23 计费明细。子系统拓扑与 SS-1~SS-7 同构，依赖关系见各节末。
 
 ### SS-1：Auth（认证与角色）
 
@@ -373,7 +376,7 @@ type ProgressEvent =
 ```
 
 **关键决策**：
-- **费用预估公式**：`estimatedCost = avgTokensPerQuote × estimatedQuoteCount × pricePerToken`；`estimatedQuoteCount` 从段落数 × `quoteRate`（历史均值）
+- **费用预估公式**：`estimatedCost = ceil(manuscript.charCount / 1000) × USER_PRICE_FEN_PER_K_CHAR`；直接精确，无引用密度不确定性
 - **断点续跑**：任务表 `lastCompletedQuoteId` + Inngest 的 `event.id` 幂等——服务重启后由 Inngest 自动续跑最后未完成 step
 - **SSE 实现**：Route Handler 返回 `ReadableStream`，内部 `await` Inngest `subscribe()`；客户端断开时 cleanup 订阅
 - **Resume 事件缓存**：最近 100 条 event 缓存在 Inngest（不落 PG，盲区 #6 平衡）
@@ -387,7 +390,7 @@ type ProgressEvent =
 **覆盖 MS**：MS-L-07（三维度呈现）、MS-L-09（版本戳冻结）、MS-L-10（打开历史）、MS-G-03（新旧对比）、MS-G-04（筛选历史）、MS-L-12（Word 导出）、MS-L-13（CSV 导出）、MS-D-07（导出失败）
 
 **组件**：
-- `lib/version-stamp.ts` — 生成 `VersionStamp = { modelId, promptVersions, sourceRefsHash, confidenceAlgoVersion, frozenAt }`
+- `lib/version-stamp.ts` — 生成 `VersionStamp = { modelId, promptVersions, sourceRefsHash, confidenceAlgoVersion, userPricingVersion, frozenAt }`
 - `app/api/reports/route.ts` — GET 列表（带筛选）
 - `app/api/reports/[id]/route.ts` — GET 详情
 - `app/api/reports/[id]/export/word/route.ts` — 用 `docx` 库生成
@@ -403,7 +406,7 @@ type ProgressEvent =
 - `report_snapshot` 表：冻结字段 `version_stamp_json / created_at` 只读
 
 **关键决策**：
-- **版本戳字段**：`modelId="deepseek-ai/DeepSeek-V3.2"` + `promptVersions={extract: sha256, verify: sha256, map: sha256}` + `sourceRefsHash=sha256([参考内容hash...].join)` + `confidenceAlgoVersion="v1.0"` + `frozenAt=ISO`
+- **版本戳字段**：`modelId="deepseek-ai/DeepSeek-V3.2"` + `promptVersions={extract: sha256, verify: sha256, map: sha256}` + `sourceRefsHash=sha256([参考内容hash...].join)` + `confidenceAlgoVersion="v1.0"` + `userPricingVersion="v1.0"` + `frozenAt=ISO`
 - **导出分片**：报告 >500 条时 Word/CSV 按 500 分文件 + zip（盲区 #8 分页）
 - **只读强制**：`report_snapshot` 表加 PG 触发器 `BEFORE UPDATE → RAISE EXCEPTION`（ADR-006）
 
@@ -475,6 +478,148 @@ export const logger = pino({
 
 ---
 
+### SS-8：Dashboard（用户主页 / 项目空间）
+
+**职责**：登录后默认落地页——一处看见用户**全部**核校项目（草稿 / 进行中 / 已完成 / 暂停 / 失败 / 拒绝），含账户用量摘要 + "新建核校"主入口；项目卡片实时反映任务状态。
+
+**覆盖 affordance**：A22
+
+**组件**：
+- `app/(main)/dashboard/page.tsx` — 主页 RSC，初次渲染 server-side 拉取项目列表 + 账户摘要
+- `app/(main)/page.tsx` — 改为 `redirect('/dashboard')`（middleware 也兜底，已登录访问 `/` → `/dashboard`，未登录 → `/login`）
+- `app/api/projects/route.ts` — `GET` 项目列表（分页 + 状态筛选 + 关键字 + 时间区间）
+- `app/api/projects/[taskId]/route.ts` — `DELETE` 删除草稿/失败任务（已完成走 SS-7 销毁通道）
+- `app/api/me/billing-summary/route.ts` — `GET` 账户摘要（本月 fen / 累计 fen / 运行中任务数）
+- `lib/services/dashboard.ts` — `listProjects(userId, filter)` / `aggregateStatusCounts(userId)`
+- `components/dashboard/ProjectCard.tsx` — 单项目卡片（书稿名 + 状态徽标 + 创建时间 + 引文条数 + 实算费用 + 操作按钮）
+- `components/dashboard/BillingSummaryBar.tsx` — 顶部摘要带（消费数据由 SS-9 提供）
+- `components/dashboard/StatusFilterTabs.tsx` — 状态筛选条
+- `components/dashboard/NewProjectButton.tsx` — 主操作入口（→ `/manuscripts/new`）
+
+**接口**：
+
+| 端点 | 方法 | Request / Response |
+|------|------|--------------------|
+| `/api/projects` | GET | `?status=*&q=*&from=*&to=*&page=*&pageSize=*` → `{ items: ProjectListItem[], total, page }` |
+| `/api/projects/[taskId]` | DELETE | 删除条件：`status ∈ {DRAFT, FAILED, CANCELED}` 才允许；其他状态 403 |
+| `/api/me/billing-summary` | GET | `?month=YYYY-MM`（默认本月）→ `{ thisMonth: { fen, taskCount }, total: { fen, taskCount }, runningTaskCount }` |
+
+```typescript
+// lib/services/dashboard.ts（草签）
+export interface ProjectListItem {
+  taskId: string;
+  displayId: string;
+  manuscriptName: string;        // 脱敏后显示名（不暴露 blob path）
+  status: TaskStatus;
+  createdAt: string;
+  totalQuotes: number | null;    // 校对前为 null
+  costActualFen: number;         // 实算（来自 SS-9）
+  reportFrozenAt: string | null;
+}
+export async function listProjects(userId: string, filter: Filter): Promise<{ items: ProjectListItem[]; total: number }>;
+export async function aggregateStatusCounts(userId: string): Promise<Record<TaskStatus, number>>;
+```
+
+**依赖**：SS-1 Auth（强制 user 隔离）+ SS-5 Task Lifecycle（`task` 表查询）+ SS-6 Report（`report_snapshot` 关联）+ SS-9 Billing（账户摘要数据源）
+
+**关键决策**：
+- **默认路由**：未登录访问 `/` → `/login`；已登录访问 `/` → `/dashboard`（middleware 实施）。**不**保留独立首页/营销页（v1.0 不需要）
+- **A11 历史报告列表的归并**：`/reports` 路由保留为"已完成"焦点视图（继续按既有 SS-6 设计），但 dashboard 才是登录后的入口；二者通过 `<Link>` 互通，不重复实现列表查询逻辑——`/reports/page.tsx` 复用 `lib/services/dashboard.ts::listProjects(userId, { status: 'COMPLETED' })`
+- **实时刷新策略**：v1.0 用 **polling**（5s 间隔），仅当 `runningTaskCount > 0` 时启用；v1.1 升级 SSE。原因见 ADR-019
+- **状态聚合查询**：`SELECT status, COUNT(*) FROM task WHERE user_id = $1 GROUP BY status` —— 单查询 + DB 索引 `(user_id, status)` 即可，不需缓存层
+- **权限隔离**：所有 SQL 强制 `WHERE user_id = :session_user_id`（SS-1 提供的 `requireUser()` 中间件抽走 userId）；E2E 跨账号断言纳入 dev-quality-assurance
+- **删除语义**：dashboard 上的"删除"对**任务**生效，对**报告**不生效——`status === COMPLETED` 时引导用户走 SS-7 的"销毁原文"流程而非删除任务（与 `real.md #7` 报告留存约束一致）
+- **不展示综合评分**：项目卡片仅显示三维度计数（如 `符合 12 / 部分符合 3 / 不符合 1`），**不**汇总为单一通过率（沿用 ADR-016 + N03）
+
+---
+
+### SS-9：Billing（按字数结算 ¥3/千字）
+
+**职责**：用户结算按书稿字数计费（¥3/千字），内部保留 token 级成本监控；任务级 / 账户级聚合查询；费率版本化与 A10 报告版本戳同步——历史结算永远以**当时**的费率呈现。
+
+**覆盖 affordance**：A23（用户结算 + MAS-4 内部成本监控）
+
+**组件**（三层分离：用户结算 / 内部成本 / 计费聚合）：
+- `lib/billing/pricing.ts` — 费率常量表，暴露 `USER_PRICING_VERSION`、`USER_PRICE_FEN_PER_K_CHAR`（¥3/千字）、`INTERNAL_PRICING`（token 费率，仅内部监控用）
+- `lib/billing/user-pricing.ts` — `computeUserCostFen(charCount)` 封装 `ceil(charCount/1000) × 300`；用户结算唯一入口
+- `lib/billing/recorder.ts` — `recordApiCall()`，保留 token 级记账用于内部成本监控（cost-guard），**非用户结算数据源**
+- `lib/billing/aggregator.ts` — 用户侧聚合改为读 `task.cost_actual_fen`，不再从 `api_call` 聚合；保留 `getTaskBilling()` 作内部诊断用
+- `lib/db/schema.ts`（**已有**）—— `api_call` 表用于内部监控，见下「数据模型」
+- `app/api/me/billing-summary/route.ts` — `GET` 账户摘要（本月/累计 SUM(task.cost_actual_fen) + 运行中任务数）
+- `app/api/billing/me/route.ts` — `GET` 账户级字数结算明细（按任务/按月汇总）
+- `components/billing/BillingPage.tsx` — 账户级独立页 `/billing`，展示"字数 N · 单价 ¥3/千字 · 合计 ¥X.XX"
+
+**数据模型（内部成本监控）**：
+
+```typescript
+// lib/db/schema.ts — api_call 表用于内部成本监控（cost-guard），非用户结算数据源
+export const apiCall = pgTable('api_call', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  taskId: uuid('task_id').notNull().references(() => task.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => user.id),  // 冗余，便于账户级聚合不需 join
+  modelId: text('model_id').notNull(),                          // e.g. 'deepseek-ai/DeepSeek-V3.2'
+  pricingVersion: text('pricing_version').notNull(),            // e.g. 'v1.0'
+  promptTokens: integer('prompt_tokens').notNull(),
+  completionTokens: integer('completion_tokens').notNull(),
+  costFen: integer('cost_fen').notNull(),                       // 内部成本（分），用于 cost-guard，非用户结算
+  phase: text('phase').notNull(),                               // 'extract' | 'verify' | 'moderation_probe' | 'map'
+  calledAt: timestamp('called_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  byTask: index('idx_api_call_task').on(t.taskId, t.calledAt),
+  byUserMonth: index('idx_api_call_user_month').on(t.userId, t.calledAt),
+}));
+```
+
+> **现有字段命名提醒**：`task.cost_actual_cents` / `cost_estimated_cents`（`schema.ts:318-319`）历史用了 `_cents` 后缀但单位实际是分。新增字段统一用 `_fen`。**渐进迁移**（不在本规约范围）：v1.0.x 期间允许两套并存；v1.1 用 drizzle 迁移把 `_cents` rename 为 `_fen`。
+
+**用户结算公式**（非 api_call 聚合）：
+```
+用户费用（分）= ceil(manuscript.charCount / 1000) × 300
+```
+
+**接口**：
+
+| 端点 | 方法 | Request / Response |
+|------|------|--------------------|
+| `/api/me/billing-summary` | GET | → `{ thisMonth: { fen, taskCount }, total: { fen, taskCount }, runningTaskCount }` |
+| `/api/billing/me` | GET | `?groupBy=month\|task` → `{ totalFen, breakdown: [{ period, charCount, costFen }] }` |
+
+```typescript
+// lib/billing/recorder.ts（草签 — 仅用于内部成本监控，非用户结算）
+export async function recordApiCall(opts: {
+  taskId: string;
+  userId: string;
+  modelId: string;
+  phase: 'extract' | 'verify' | 'moderation_probe' | 'map';
+  promptTokens: number;
+  completionTokens: number;
+}): Promise<void> {
+  const costFen = computeInternalCostFen(opts.modelId, opts.promptTokens, opts.completionTokens);
+  await db.transaction(async (tx) => {
+    await tx.insert(apiCall).values({ ...opts, costFen, pricingVersion: 'v1.0' });
+    await tx.update(task)
+      .set({ costActualFen: sql`COALESCE(${task.costActualFen}, 0) + ${costFen}` })
+      .where(eq(task.id, opts.taskId));
+  });
+}
+```
+
+**与 cost-guard 的整合**：
+- `inngest/functions/cost-guard.ts` 读 `task.cost_actual_fen`（由 `recordApiCall` 同步累加）判断超额——**不变**；内部 token 成本用于 cost-guard 越界暂停
+- 不变量：`task.cost_actual_fen = SUM(api_call.cost_fen WHERE task_id = task.id)` —— 任务结束时跑一次断言；不一致则触发数据修复（写入 audit_log）
+- **用户结算不依赖 cost-guard**：用户看到的是字数费用，与内部 token 成本无关
+
+**依赖**：SS-5 Task Lifecycle（cost-guard 消费 `task.cost_actual_fen`）+ SS-1 Auth（账户级查询 user 隔离）+ SS-2 Manuscript（`charCount` 为用户结算输入）
+
+**关键决策**：
+- **金额单位全链路 `int fen`**：见 ADR-017
+- **费率代码隔离 + 版本化（双轨制）**：见 ADR-018
+- **用户结算 vs 内部成本分离**：用户结算走字数公式 `ceil(charCount/1000) × 300`；内部成本监控仍按 token 实时记账——两者互不依赖
+- **历史不被追溯重算**：升级 `USER_PRICING_VERSION` 时只影响**此后**新任务；既存 `task.cost_actual_fen` 永不被脚本批改（与 ADR-006 报告不可变同精神）
+- **报告版本戳扩展**：`report_snapshot.version_stamp_json` 加入 `pricingVersion: 'v1.0'` 字段（ADR-006 / ADR-012 边界小幅扩展，仍只增不改）
+
+---
+
 ## 5. 目录结构
 
 （完整结构见 §5.1；关键约定见 §5.2）
@@ -489,7 +634,9 @@ export const logger = pino({
 │   │   └── register/page.tsx               # MS-L-01
 │   ├── (main)/                             # 已登录路由组
 │   │   ├── layout.tsx                      # Auth guard + shell
-│   │   ├── page.tsx                        # 工作台
+│   │   ├── page.tsx                        # redirect → /dashboard
+│   │   ├── dashboard/page.tsx              # SS-8 用户主页（A22）
+│   │   ├── billing/page.tsx                # SS-9 账户级账单（A23）
 │   │   ├── manuscripts/
 │   │   │   ├── new/page.tsx                # 上传
 │   │   │   └── [id]/page.tsx               # 详情+三维度报告
@@ -504,6 +651,14 @@ export const logger = pino({
 │   │   └── settings/page.tsx
 │   ├── api/                                # Route Handlers
 │   │   ├── auth/[...all]/route.ts
+│   │   ├── projects/                       # SS-8 用户主页（A22）
+│   │   │   ├── route.ts                    # GET 项目列表
+│   │   │   └── [taskId]/route.ts           # DELETE 草稿/失败任务
+│   │   ├── me/
+│   │   │   └── billing-summary/route.ts    # GET 账户摘要带数据
+│   │   ├── billing/                        # SS-9 字数结算（A23）
+│   │   │   └── me/
+│   │   │       └── route.ts                # GET 账户级字数结算明细
 │   │   ├── manuscripts/route.ts
 │   │   ├── references/route.ts
 │   │   ├── tasks/
@@ -537,9 +692,24 @@ export const logger = pino({
 │   ├── progress-stream/                    # SSE 客户端
 │   ├── agreement-dialog/                   # 协议弹窗
 │   ├── version-stamp/                      # 版本戳展示
-│   └── cost-estimate-dialog/               # 费用预估弹窗
+│   ├── cost-estimate-dialog/               # 费用预估弹窗
+│   ├── dashboard/                          # SS-8 用户主页（A22）
+│   │   ├── ProjectCard.tsx
+│   │   ├── BillingSummaryBar.tsx
+│   │   ├── StatusFilterTabs.tsx
+│   │   └── NewProjectButton.tsx
+└── billing/                            # SS-9 字数结算（A23）
+    └── BillingPage.tsx                 # 账户级页面体（字数 N · 单价 ¥3/千字 · 合计 ¥X.XX）
 ├── lib/                                    # 业务逻辑（无 framework 依赖优先）
 │   ├── auth.ts
+├── billing/                            # SS-9 字数结算（A23）
+│   ├── pricing.ts                      # 用户费率常量 + 内部 token 费率
+│   ├── user-pricing.ts                 # computeUserCostFen()
+│   ├── recorder.ts                     # recordApiCall() 仅内部成本监控
+│   ├── aggregator.ts                   # 用户侧聚合读 task.cost_actual_fen
+│   └── types.ts                        # Fen brand type
+│   ├── services/
+│   │   └── dashboard.ts                    # SS-8 listProjects/aggregateStatusCounts
 │   ├── db/
 │   │   ├── schema.ts                       # Drizzle table 定义
 │   │   ├── index.ts                        # db client
@@ -653,6 +823,12 @@ export const logger = pino({
 /api/admin/health             → GET
 /api/admin/metrics            → GET（admin-only）
 
+/api/projects                 → GET 项目列表（A22）
+/api/projects/:taskId         → DELETE 草稿/失败任务（A22）
+/api/me/billing-summary       → GET 账户摘要带数据（A22）
+
+/api/billing/me               → GET 账户级字数结算明细（A23）
+
 /api/inngest                  → Inngest serve handler
 ```
 
@@ -754,6 +930,10 @@ export enum ErrorCode {
   // Report
   REPORT_FROZEN = "REPORT_FROZEN",
   EXPORT_FAILED = "EXPORT_FAILED",
+  // Billing (A23) / Dashboard (A22)
+  PRICING_VERSION_MISSING = "PRICING_VERSION_MISSING",   // recordApiCall 时 modelId 不在 PRICING 表
+  BILLING_RANGE_TOO_LARGE = "BILLING_RANGE_TOO_LARGE",   // 账单查询区间过大
+  PROJECT_NOT_DELETABLE = "PROJECT_NOT_DELETABLE",       // 仅 DRAFT/FAILED/CANCELED 可 DELETE
   // System
   INTERNAL_ERROR = "INTERNAL_ERROR",
 }
@@ -825,7 +1005,46 @@ Browser                  Next.js                  Inngest                DeepSee
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 7.3 TTL 销毁（Inngest Cron）
+### 7.3 计费记账钩子（SS-9 成本监控 + 用户结算分离）
+
+> 用户结算走字数公式 `computeUserCostFen(charCount)`，与内部 token 成本监控完全分离。
+
+```
+任务创建时（SS-5）
+   │
+   ├─▶ 读取 manuscript.charCount
+   ├─▶ 预估费用 = computeUserCostFen(charCount)   ◄── 字数公式，无 token 波动
+   └─▶ 存入 task.cost_estimated_fen
+
+SS-4 verify step（每条引文 — 内部成本监控，非用户结算）
+   │
+   └─▶ [可选] 内部 recordApiCall（仅 cost-guard 消费）
+         │
+         ├─▶ INSERT api_call (... cost_fen, pricing_version)
+         └─▶ UPDATE task SET cost_actual_fen += cost_fen
+
+SS-5 cost-guard（独立 Inngest event 触发）
+   │
+   ├─▶ SELECT cost_actual_fen FROM task WHERE id = ?
+   │     ▲
+   │     │（不变量：cost_actual_fen = SUM(api_call.cost_fen)；任务结束断言）
+   │
+   ├─▶ if cost_actual_fen > cost_estimated_fen × 1.5
+   │     └─▶ pause task + publish progress { type: 'cost_alert' }
+   │
+   └─▶ else continue
+
+SS-8 dashboard 拉取（用户访问 /dashboard）
+   │
+   ├─▶ GET /api/projects → SELECT task WHERE user_id = ?
+   │
+   └─▶ GET /api/me/billing-summary
+         └─▶ SELECT SUM(cost_actual_fen) FROM task WHERE user_id = ? AND created_at >= 月初
+               ▲
+               │（用户结算来自 task.cost_actual_fen，非 api_call 聚合）
+```
+
+### 7.4 TTL 销毁（Inngest Cron）
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -1206,6 +1425,107 @@ export function displayText(text: string): string {
 
 ---
 
+### ADR-017：货币最小单位为「分」（int），命名规范 `_fen`
+
+**Status**: Accepted
+
+**Context**: A23 引入账户级账单。`float / decimal` 在 JS / API / SSE / DB 层流转易致精度漂移（如 `0.1 + 0.2 !== 0.3`）；金融语境历史教训反复证明应该用整数最小单位。`real.md #6` 成本透明的前提是金额展示精确到分。
+
+**Decision**:
+- 全链路（DB / API / SSE / Inngest 事件 / TS interface）金额字段用 `int`，单位「分」（`fen` = 1/100 元）
+- 字段命名后缀**统一为 `_fen`**（如 `cost_actual_fen`、`total_fen`）；展示层单点格式化 `formatFenAsYuan(fen): "¥X.XX"`
+- DB 层使用 `integer not null`；业务代码导入金额走 `import { fen } from '@/lib/billing/types'` 的 brand type 防误用
+- **历史负债**：现有 `task.cost_actual_cents` / `cost_estimated_cents`（`schema.ts:318-319`）命名为 `_cents`，单位实际是分。允许两套并存到 v1.0.x；v1.1 用 drizzle migration `RENAME COLUMN` 一次性收口
+
+**Consequences**:
+- ✅ 杜绝精度问题；账单 reconciliation 永远精确
+- ✅ TS 类型层 brand type 防止"金额数字" vs "其他数字" 混用
+- ⚠️ rename migration 需停服窗口（对 v1.0.x 单 user 阶段无所谓）；v1.1 前 grep 业务代码提示新代码不要用 `_cents` 后缀
+
+---
+
+### ADR-018：费率常量隔离 + 版本化（双轨制）
+
+**Status**: Accepted
+
+**Context**: A23 按字数结算 + 内部成本监控双轨制——用户结算费率（¥3/千字）和内部 token 成本费率分开管理，各自版本化。报告版本戳冻结的是用户结算费率版本，内部 token 费率的变动不影响历史用户账单。同时 `notes #7` 版本锁定与 `real.md #7` 报告不可变要求"那一刻的真实"被永久冻结。
+
+**Decision**:
+- 费率以**模块常量**形式存于 `lib/billing/pricing.ts`，业务代码**禁止**出现 `300` / `¥3` / `0.002` / `0.003` 等数字字面量——eslint 自定义规则 `no-pricing-literal` 守门
+- `USER_PRICING_VERSION` 是字符串常量（如 `'v1.0'`）；任何用户费率值变更必同步升版
+- 内部 token 费率（`INTERNAL_PRICING`）用于 `recordApiCall` 记账，仅 cost-guard 消费，不受用户结算影响
+- 双轨费率升级流程：
+
+  ```typescript
+  // lib/billing/pricing.ts
+  export const USER_PRICING_VERSION = 'v1.0' as const;
+  export const USER_PRICE_FEN_PER_K_CHAR = 300;   // ¥3 / 千字（仅书稿字数）
+
+  // 内部 token 成本监控（仅 cost-guard 使用，非用户结算）
+  export const INTERNAL_PRICING = {
+    'deepseek-ai/DeepSeek-V3.2': {
+      inputFenPerKToken: 2.0,    // ¥0.002 / 1K
+      outputFenPerKToken: 3.0,   // ¥0.003 / 1K
+    },
+  } as const;
+
+  /** 用户结算费用（分）：ceil(charCount / 1000) × 300 */
+  export function computeUserCostFen(charCount: number): number {
+    return Math.ceil(charCount / 1000) * USER_PRICE_FEN_PER_K_CHAR;
+  }
+
+  /** 内部成本（分）：token 公式，仅 cost-guard 使用 */
+  export function computeInternalCostFen(modelId: string, promptTokens: number, completionTokens: number): number {
+    const rate = INTERNAL_PRICING[modelId];
+    if (!rate) throw new Error(`unknown model pricing: ${modelId}`);
+    return Math.max(1, Math.round(
+      (promptTokens * rate.inputFenPerKToken + completionTokens * rate.outputFenPerKToken) / 1000,
+    ));
+  }
+  ```
+
+- 报告版本戳（ADR-006/-012 范畴）扩展加入 `userPricingVersion` 记录**用户结算费率版本**：
+
+  ```typescript
+  type VersionStamp = {
+    modelId: 'deepseek-ai/DeepSeek-V3.2';
+    promptVersions: { extract: string; verify: string; map: string };
+    sourceRefsHash: string;
+    confidenceAlgoVersion: 'v1.0';
+    userPricingVersion: 'v1.0';     // ← 新增（用户结算费率版本）
+    frozenAt: string;
+  };
+  ```
+
+- **历史不被追溯重算**：升 `USER_PRICING_VERSION` → 只影响**此后**的新任务；既存 `task.cost_actual_fen`（基于字数公式）永不被脚本批改
+
+**Consequences**:
+- ✅ 历史报告打开时显示的用户费用永远是当时按字数算出的，不会因为后台涨价而被改写
+- ✅ 内部 token 成本监控独立运行，调整 token 费率不影响用户账单
+- ✅ 用户结算清晰可预期——字数固定，无 token 波动风险
+- ⚠️ 需要维护两套费率常量（用户字数价 + 内部 token 价），但变动频率极低（用户价约季度级，内部价约月级）
+
+---
+
+### ADR-019：Dashboard 实时刷新 v1.0 用 polling，v1.1 升 SSE
+
+**Status**: Accepted
+
+**Context**: A22 用户主页需要反映任务状态变化（"校对中"→"已完成"）。可选方案：① 客户端 polling；② SSE（订阅用户级事件，与 SS-5 已有的任务级 SSE 形态相似）。
+
+**Decision**:
+- v1.0：用户访问 `/dashboard` 时，前端定时（5s 间隔）`fetch('/api/projects?status=RUNNING_STATES')`；**仅当 `runningTaskCount > 0` 时启用** polling，无运行任务时停止
+- v1.1：升级为 SSE 用户级订阅（订阅 `user/{userId}/task.progress`）
+- 不为 v1.0 引入 dashboard 专用 SSE 端点——避免与 SS-5 任务级 SSE 重复设计
+
+**Consequences**:
+- ✅ v1.0 实现极简——5s polling = 4 行 React `useEffect`
+- ✅ Inngest Realtime 连接数限额（盲区 #6）不被拉爆（dashboard 长期挂着会大量消耗连接）
+- ⚠️ 任务完成到主页刷新有 ≤5s 延迟——dashboard 入口场景可接受
+- ⚠️ v1.1 升 SSE 时需复用 SS-5 的 Inngest Realtime 桥接代码
+
+---
+
 ## 9. 安全架构
 
 ### 9.1 分层
@@ -1286,6 +1606,9 @@ export function displayText(text: string): string {
 - ❌ **多模型跨验证**：置信度 `w3=0`；v1.1 再引入
 - ❌ **受版权保护的内置语料库**：永不做（real.md #5）
 - ❌ **综合评分 / 通过率**：永不做（notes #6）
+- ❌ **dashboard 实时 SSE 推送**：v1.0 用 polling（ADR-019）；v1.1 升 SSE
+- ❌ **支付 / 充值 / 余额扣减**：v1.0 计费仅做"展示与记账"（A23），不做交易闭环；预付费 / 后付费走线下结算（v2.0 企业版再论）
+- ❌ **跨用户消费榜 / 计费分析**：admin metrics（§10）只看汇总，不暴露用户级账单
 
 ---
 
@@ -1300,6 +1623,7 @@ export function displayText(text: string): string {
 - [x] 安全约束全覆盖（§9 矩阵）
 - [x] 技术决策文档化（16 条 ADR 三段式）
 - [x] real.md 7 条约束全映射（附录 B）
+- [x] PRD 新增模块 A22 / A23 各对应一个子系统（SS-8 / SS-9）+ 至少一条 ADR
 
 **本项目加项**：
 
@@ -1408,8 +1732,10 @@ v1.0-m1 合计约 4.5 周——与用户故事规约 §5.1 预估吻合。
 | MS-L-12 Word 导出 | ADR-006 | — |
 | MS-L-13 CSV 导出 | ADR-006 | — |
 | MS-D-07 导出失败 | — | — |
+| **A22 用户主页** | **ADR-019** | ADR-004 |
+| **A23 字数结算明细** | **ADR-017, ADR-018** | ADR-006 |
 
-**覆盖校核**：25 / 25 MS 全覆盖 ✓
+**覆盖校核**：25 / 25 MS + 2 / 2 新增 affordance（A22 / A23） 全覆盖 ✓
 
 ---
 
@@ -1450,11 +1776,12 @@ v1.0-m1 合计约 4.5 周——与用户故事规约 §5.1 预估吻合。
 | 校对任务 | `task` | id, userId, manuscriptId, referenceIds (array), status, costEstimated, costActual, ttlExpiresAt, versionStamp (jsonb) |
 | 校对结果 | `verification_result` | id, taskId, quoteId, verdictTextAccuracy (jsonb), verdictInterpretation (jsonb), verdictContext (jsonb), matchStatus, confidence, confidenceBreakdown (jsonb), moderationStatus |
 | *辅助* | `result_reference_hit` | resultId, referenceId, hit, snippet, locationJson, similarity |
-| *辅助* | `report_snapshot` | id, taskId, versionStampJson (readonly), frozenAt |
+| *辅助* | `report_snapshot` | id, taskId, versionStampJson (readonly，含 pricingVersion), frozenAt |
 | *辅助* | `audit_log` | id, userId, op, targetId, metadataJson (无原文), createdAt |
 | *辅助* | `user_agreement_acceptance` | userId, agreementVersion, acceptedAt |
+| *辅助（SS-9 内部成本监控）* | `api_call` | id, taskId, userId, modelId, pricingVersion, promptTokens, completionTokens, costFen（仅 cost-guard 用，非用户结算）, phase, calledAt |
 
-**覆盖校核**：7/7 实体 + 4 辅助表 ✓
+**覆盖校核**：7/7 实体 + 5 辅助表 ✓
 
 ---
 

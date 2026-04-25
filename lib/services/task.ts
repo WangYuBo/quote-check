@@ -21,6 +21,7 @@ export async function createTask(values: {
   manuscriptId: string;
   referenceIds?: string[];
   costEstimatedCents?: number;
+  costEstimatedFen?: number;
   costCeilingCents?: number;
   costConfirmedAt?: Date;
 }): Promise<Task> {
@@ -33,6 +34,7 @@ export async function createTask(values: {
       displayId: `T-${shortId()}`,
       status: 'PENDING_PARSE',
       ...(values.costEstimatedCents !== undefined && { costEstimatedCents: values.costEstimatedCents }),
+      ...(values.costEstimatedFen !== undefined && { costEstimatedFen: values.costEstimatedFen }),
       ...(values.costCeilingCents !== undefined && { costCeilingCents: values.costCeilingCents }),
       ...(values.costConfirmedAt !== undefined && {
         costConfirmedAt: values.costConfirmedAt,
@@ -50,7 +52,10 @@ export async function createTask(values: {
 export async function updateTaskCost(taskId: string, additionalFen: number): Promise<void> {
   await db
     .update(task)
-    .set({ costActualCents: sql`COALESCE(${task.costActualCents}, 0) + ${additionalFen}` })
+    .set({
+      costActualCents: sql`COALESCE(${task.costActualCents}, 0) + ${additionalFen}`,
+      costActualFen: sql`COALESCE(${task.costActualFen}, 0) + ${additionalFen}`,
+    })
     .where(eq(task.id, taskId));
 }
 

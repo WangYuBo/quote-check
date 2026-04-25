@@ -11,7 +11,7 @@ import {
   SIMILARITY_PARTIAL_THRESHOLD,
   computeConfidence,
 } from '@/lib/ai/confidence';
-import { computeCostFen } from '@/lib/ai/cost';
+import { computeInternalCostFen, USER_PRICING_VERSION } from '@/lib/ai/cost';
 import { isModerationRejection } from '@/lib/ai/moderation';
 import { retrievePassagesForQuote } from '@/lib/ai/retrieval';
 import { PROMPT_VERSION, loadPromptRaw } from '@/lib/ai/prompts';
@@ -20,7 +20,6 @@ import { listUserReferences } from '@/lib/services/reference';
 import {
   createReportSnapshot,
   getReport,
-  getTask,
   getTaskContext,
   saveQuotes,
   saveReferenceHits,
@@ -204,7 +203,7 @@ export const proofreadRunFn = inngest.createFunction(
       // 追踪 extract 阶段费用
       await updateTaskCost(
         ctx.taskId,
-        computeCostFen(extractUsage.promptTokens, extractUsage.completionTokens),
+        computeInternalCostFen(MODEL_ID, extractUsage.promptTokens, extractUsage.completionTokens),
       );
 
       // 提取 JSON（LLM 可能含 markdown 代码块）
@@ -293,19 +292,18 @@ export const proofreadRunFn = inngest.createFunction(
               })
             : [];
 
-        // 四态前置计算：有 ref 上传但无段落命中 → NOT_FOUND_IN_REF
+        // pg_trgm 命中即真理；未命中（含无 ref 上传）回落 LLM 判定，
+        // 避免 CJK 检索召回失败时所有卡片被强行标 NOT_FOUND_IN_REF
         const hasUploadedRefs = refContext.refs.length > 0;
         const topSim = passages[0]?.similarity ?? 0;
-        const preMatchStatus: 'MATCH' | 'PARTIAL_MATCH' | 'NOT_MATCH' | 'NOT_FOUND_IN_REF' | undefined =
-          !hasUploadedRefs
+        const trgmStatus: 'MATCH' | 'PARTIAL_MATCH' | 'NOT_MATCH' | undefined =
+          !hasUploadedRefs || passages.length === 0
             ? undefined
-            : passages.length === 0
-              ? 'NOT_FOUND_IN_REF'
-              : topSim >= SIMILARITY_MATCH_THRESHOLD
-                ? 'MATCH'
-                : topSim >= SIMILARITY_PARTIAL_THRESHOLD
-                  ? 'PARTIAL_MATCH'
-                  : 'NOT_MATCH';
+            : topSim >= SIMILARITY_MATCH_THRESHOLD
+              ? 'MATCH'
+              : topSim >= SIMILARITY_PARTIAL_THRESHOLD
+                ? 'PARTIAL_MATCH'
+                : 'NOT_MATCH';
 
         // 构建参考原文字段（替换 hardcoded 无参考分支）
         const refContent =
@@ -336,7 +334,7 @@ export const proofreadRunFn = inngest.createFunction(
         // 追踪 verify 阶段费用
         await updateTaskCost(
           ctx.taskId,
-          computeCostFen(verifyUsage.promptTokens, verifyUsage.completionTokens),
+          computeInternalCostFen(MODEL_ID, verifyUsage.promptTokens, verifyUsage.completionTokens),
         );
 
         // 多策略 JSON 提取：① 代码块 ② 纯 JSON 起始位置 ③ 全文
@@ -402,8 +400,7 @@ export const proofreadRunFn = inngest.createFunction(
           : (verifyResult.reference_hits.some((h) => h.location.length > 0) ? 1 : 0);
         const conf = computeConfidence({ refHit: refHitSignal, locationValid, crossModel: 0 });
 
-        // matchStatus：有 preMatchStatus 时覆盖 LLM 结果
-        const finalMatchStatus = preMatchStatus ?? llmMatchToDb(verifyResult.text_accuracy.match_status);
+        const finalMatchStatus = trgmStatus ?? llmMatchToDb(verifyResult.text_accuracy.match_status);
 
         const savedResult = await saveVerificationResult({
           taskId: ctx.taskId,
@@ -470,20 +467,6 @@ export const proofreadRunFn = inngest.createFunction(
 
       verifiedCount++;
       await updateTaskProgress(taskId, { verifiedQuotes: verifiedCount });
-
-      // MAS-4: 发费用守卫检查事件，成本超限时 cost-guard 会将任务置为 PAUSED_COST
-      const currentTask = await getTask(taskId);
-      const costActualFen = currentTask?.costActualCents ?? 0;
-      await step.sendEvent(`cost-check-${q.id}`, {
-        name: 'task/cost.check',
-        data: { taskId, costActualFen },
-      });
-
-      // 如果 cost-guard 已暂停任务，提前退出循环
-      if (currentTask?.status === 'PAUSED_COST') {
-        logger.warn({ taskId, costActualFen, verifiedCount }, '[proofread-run] 费用超限，任务已暂停');
-        return { ok: true, taskId, paused: true, verifiedCount };
-      }
     }
 
     // ─── S5: freeze-report ────────────────────────────────────────────
@@ -514,6 +497,7 @@ export const proofreadRunFn = inngest.createFunction(
             map: PROMPT_VERSION,
           },
           sourceRefsHash: '',
+          userPricingVersion: USER_PRICING_VERSION,
           confidenceAlgoVersion: CONFIDENCE_ALGO_VERSION,
         },
         resultsAggregate: {

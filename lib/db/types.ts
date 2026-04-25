@@ -1,11 +1,12 @@
 /**
- * DB 行类型导出（spec-database-design §4.2）
+ * DB 行类型导出（spec-database-design §4.2、SS-9）
  * Select = 查询返回；Insert = values() 接受
  */
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 
 import type {
   account,
+  apiCall,
   auditLog,
   manuscript,
   paragraph,
@@ -70,3 +71,6 @@ export type NewUserAgreementAcceptance = InferInsertModel<typeof userAgreementAc
 
 export type PromptVersion = InferSelectModel<typeof promptVersion>;
 export type NewPromptVersion = InferInsertModel<typeof promptVersion>;
+
+export type ApiCall = InferSelectModel<typeof apiCall>;
+export type NewApiCall = InferInsertModel<typeof apiCall>;

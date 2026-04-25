@@ -78,7 +78,7 @@ created: 2026-04-19
 4. 报告（历史报告 + 对比 + 导出）
 5. 参考库（上传/管理权威参考文献）
 
-**顶部条**：LOGO + 全局搜索 + 通知（费用超额/TTL 临期） + 用户菜单
+**顶部条**：LOGO + 全局搜索 + 通知（TTL 临期） + 用户菜单
 **右侧面板（可折叠）**：当前任务的 SSE 进度流 + 版本戳（始终可见，MS-L-09）
 
 ### 2.3 Color Scheme（OKLCH）
@@ -102,7 +102,7 @@ created: 2026-04-19
 | `--color-verdict-notfound` | `oklch(0.60 0.02 280)` | "参考未涉及"中性紫灰 |
 | `--color-verdict-variant` | `oklch(0.60 0.13 240)` | "版本异文"蓝（独立于 match/notmatch，real.md #4） |
 | `--color-rejected` | `oklch(0.50 0 0)` | 审核拒绝深灰（配斜纹底纹） |
-| `--color-warning` | `oklch(0.70 0.15 80)` | 费用超额、TTL 临期 |
+| `--color-warning` | `oklch(0.70 0.15 80)` | TTL 临期、二次确认提示 |
 | `--color-destructive` | `oklch(0.55 0.18 30)` | 删除、取消（仅用于破坏性动作，**不**用于 verdict） |
 
 **B/C 皮肤切换**：CSS 变量层 override（见 §14）；不动组件。
@@ -278,7 +278,7 @@ created: 2026-04-19
 | `/(main)/manuscripts/new` | 上传书稿 | MS-L-03 |
 | `/(main)/manuscripts/[id]` | 书稿详情 + 任务列表 | MS-L-03 |
 | `/(main)/tasks/[id]` | 任务进行中（SSE 进度） | MS-L-06 |
-| `/(main)/tasks/[id]/cost-confirm` | 费用二次确认 | MS-D-04 |
+| `/(main)/tasks/[id]` | 费用展示（嵌入页面底部） | MS-L-05 |
 | `/(main)/reports/[id]` | 报告详情（三维度） | MS-L-07, MS-L-10 |
 | `/(main)/reports/[id]/export` | 导出 Word/CSV | MS-L-12, MS-L-13 |
 | `/(main)/reports/[id]/compare/[otherId]` | 新旧对比 | MS-G-03 |
@@ -305,7 +305,7 @@ app/
 │   │   └── [id]/page.tsx
 │   ├── tasks/
 │   │   ├── [id]/page.tsx
-│   │   └── [id]/cost-confirm/page.tsx
+│   │   # [id]/cost-confirm 已移除（字数固定计费，无 cost-guard）
 │   ├── reports/
 │   │   ├── [id]/page.tsx
 │   │   ├── [id]/export/page.tsx
@@ -338,8 +338,7 @@ components/
 │   ├── AgreementContentB.tsx         # B 端完整版文本
 │   └── AgreementContentC.tsx         # C 端简化版文本
 ├── cost-confirm/
-│   ├── CostEstimateCard.tsx          # 预估展示
-│   └── CostPausedBanner.tsx          # 越界暂停横幅
+│   └── CostEstimateCard.tsx          # 预估展示（ceil(字数/1000) × ¥3）
 ├── version-stamp/
 │   ├── VersionStampBadge.tsx         # 任务详情页的小角标
 │   └── VersionStampCard.tsx          # 报告首页的完整卡片
@@ -535,7 +534,7 @@ interface ProgressStreamProps {
 ```
 
 **内部用 `EventSource` 连 `/api/tasks/[id]/stream`**：
-- 事件类型：`task.status_changed` / `task.quote_verified` / `task.cost_warning` / `task.moderation_rejected` / `task.completed` / `task.failed`
+- 事件类型：`task.status_changed` / `task.quote_verified` / `task.moderation_rejected` / `task.completed` / `task.failed`
 - 重连策略：指数退避（1s / 2s / 4s / 8s），最多 10 次
 - 断线横幅：`Alert variant="warning"` "连接中断，正在重连..." + 手动重连按钮
 - 完成后自动升级为 `TaskStatus="COMPLETED"` + Sonner toast
@@ -556,7 +555,7 @@ interface TaskStatusBadgeProps {
 | PENDING_ESTIMATE | 估算中 | primary |
 | AWAITING_CONFIRM | 待确认费用 | warning |
 | VERIFYING | 校对中 | primary（脉动） |
-| PAUSED_COST | 暂停（成本超额） | warning |
+| PAUSED_COST | 暂停 | warning |
 | REJECTED_BY_MODERATION | 审核未通过 | rejected |
 | COMPLETED | 已完成 | match |
 | FAILED | 失败 | destructive |
@@ -592,32 +591,25 @@ interface AgreementDialogProps {
 
 **C 端简化版**：保留"TTL 销毁 / 数据流向 / 不用于训练"三条核心，其余折叠到"查看完整条款"链接。
 
-### 7.8 `<CostEstimateCard>` + `<CostPausedBanner>`
+### 7.8 `<CostEstimateCard>`（字数结算）
 
-**MS 归属**：MS-D-04（成本透明 + 二次确认 + 越界暂停）
-**real.md #6 硬约束**：预估 > 阈值（¥50）必二次确认；运行中 > 1.5× 必暂停。
+**MS 归属**：MS-L-05（费用透明 + 二次确认）
+**real.md #6 硬约束**：预估 > 阈值（¥50）必二次确认；按书稿字数固定计费，运行中不追加。
 
 ```typescript
 interface CostEstimateCardProps {
   estimatedCents: number;
-  ceilingCents: number;      // 1.5× 预估
-  breakdown: { tokens: number; quotes: number; model: string };
+  ceilingCents: number;
+  charCount: number;
+  unitPrice: string;          // "¥3/千字"
   onConfirm: () => Promise<void>;
   onCancel: () => void;
-}
-
-interface CostPausedBannerProps {
-  taskId: string;
-  currentCostCents: number;
-  ceilingCents: number;
-  onResume: () => Promise<void>;
-  onCancel: () => Promise<void>;
 }
 ```
 
 **视觉约束**：
+- 显示 "书稿 N 字 × ¥3/千字 = ¥X.XX"
 - 预估 > ¥50 时数字放大 1.5×，红底警示条
-- 越界暂停 banner 占满主区顶部，不可忽略（MAS-4）
 - "继续"按钮需二次输入确认（type "确认继续" → enable）
 
 ### 7.9 `<VersionStampBadge>` + `<VersionStampCard>`
@@ -875,7 +867,7 @@ export function generateMockVerifyResponse(quote: Quote): VerificationResult {
 | MS-L-12 Word 导出 | `/(main)/reports/[id]/export` | 前端只触发下载；生成走 `app/api/reports/[id]/export/word` |
 | MS-L-13 CSV 导出 | 同上 | 同上 |
 | MS-D-02 审核拒绝 | 任务/报告均显示 | `<ModerationRejectedSkin>` |
-| MS-D-04 费用透明 | 任务详情 | `<CostEstimateCard>` + `<CostPausedBanner>` |
+| MS-L-05 费用透明 | 任务发起 | `<CostEstimateCard>`（字数公式，无运行中追加减速） |
 | MS-D-06 TTL | `/(main)/settings` | 任务列表带倒计时 `Clock` |
 
 ### P1 次优先（CS-02 至 CS-05）
@@ -888,7 +880,7 @@ export function generateMockVerifyResponse(quote: Quote): VerificationResult {
 | MS-D-03 限流重试 | SSE 事件 | Sonner toast "触发限流，N 秒后重试" |
 | MS-D-05 书名别名 | 上传/提取阶段 | 自动归一（透明于 UI） |
 | MS-G-01 参考库管理 | `/(main)/references` | CRUD + 删除前依赖检查（§9.5 DB 查询） |
-| MS-G-02 任务暂停 | 任务详情 | `<CostPausedBanner>` |
+| MS-G-02 任务暂停 | 任务详情 | （已关闭：字数固定计费，无需 cost-guard 暂停） |
 | MS-G-03 新旧对比 | `/reports/[id]/compare/[otherId]` | 双栏 `<QuoteCard>` diff |
 | MS-G-04 历史列表 | 工作台 | 多维度筛选 |
 | MS-G-05 协议重签 | shell 层 | `<AgreementDialog>` 重签流 |
