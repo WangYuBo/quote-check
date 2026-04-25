@@ -56,6 +56,7 @@ export default function UploadPage() {
   const manuscriptInputRef = useRef<HTMLInputElement>(null);
   const refInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [refDragging, setRefDragging] = useState(false);
   const [status, setStatus] = useState<'idle' | 'uploading' | 'creating' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [preview, setPreview] = useState<{
@@ -317,30 +318,6 @@ export default function UploadPage() {
               <h2 className="text-lg font-medium text-(--color-fg)">参考文献 <span className="text-sm text-(--color-fg-muted) font-normal">（可选）</span></h2>
             </div>
 
-            {/* 已上传书稿摘要 */}
-            {preview && (
-              <div className="rounded-lg bg-(--color-bg) border border-(--color-border) px-4 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Check size={16} className="text-(--color-verdict-match)" />
-                  <div>
-                    <p className="text-sm font-medium text-(--color-fg)">{preview.filename}</p>
-                    <p className="text-xs text-(--color-fg-muted)">{preview.paragraphCount} 段落 · {preview.charCount.toLocaleString()} 字符</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setManuscriptId(null);
-                    setPreview(null);
-                    setCurrentStep(1);
-                  }}
-                  className="text-xs text-(--color-fg-muted) hover:text-(--color-fg)"
-                >
-                  更换
-                </button>
-              </div>
-            )}
-
             {/* 版权声明 */}
             <label className="flex items-start gap-2.5 text-sm text-(--color-fg-muted) cursor-pointer group">
               <input
@@ -368,7 +345,6 @@ export default function UploadPage() {
                     type="button"
                     onClick={() => removeRef(idx)}
                     className="text-xs text-(--color-fg-muted) hover:text-red-500 shrink-0 ml-2"
-                    disabled={!!item.referenceId}
                   >
                     移除
                   </button>
@@ -416,15 +392,29 @@ export default function UploadPage() {
               </div>
             ))}
 
-            {/* 添加参考文献 */}
+            {/* 添加参考文献 — 拖拽或点击 */}
             {refs.length < MAX_REFS && (
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
+                className={`border-2 border-dashed rounded-xl py-6 text-center cursor-pointer transition-all ${
+                  refDragging
+                    ? 'border-(--color-primary) bg-(--color-primary)/5 scale-[1.01]'
+                    : 'border-(--color-border) hover:border-(--color-primary) hover:bg-(--color-bg)'
+                }`}
                 onClick={() => refInputRef.current?.click()}
-                className="w-full py-3 border-2 border-dashed border-(--color-border) rounded-xl text-sm text-(--color-fg-muted) hover:border-(--color-primary) hover:text-(--color-primary) transition-colors"
+                onKeyDown={(e) => e.key === 'Enter' && refInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setRefDragging(true); }}
+                onDragLeave={() => setRefDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setRefDragging(false);
+                  const file = e.dataTransfer.files[0];
+                  if (file) void handleRefFile(file);
+                }}
               >
-                + 添加参考文献
-              </button>
+                <p className="text-sm text-(--color-fg-muted)">+ 添加参考文献（拖拽或点击选择文件）</p>
+              </div>
             )}
             <input
               ref={refInputRef}
