@@ -9,6 +9,7 @@
 import { and, eq, isNull, lt } from 'drizzle-orm';
 
 import { inngest } from '@/inngest/client';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { manuscript, reference, task } from '@/lib/db/schema';
 import { deleteBlobByUrl } from '@/lib/storage/blob';
@@ -18,9 +19,9 @@ export const ttlDestroyFn = inngest.createFunction(
     id: 'ttl-destroy',
     name: 'TTL 销毁 · 过期书稿清理',
     concurrency: { limit: 1 },
+    triggers: [{ cron: '*/10 * * * *' }],
   },
-  { cron: '*/10 * * * *' },
-  async ({ step, logger }) => {
+  async ({ step }) => {
     const expired = await step.run('scan-expired', async () => {
       return db
         .select({ id: task.id, manuscriptId: task.manuscriptId })

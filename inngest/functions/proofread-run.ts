@@ -2,6 +2,8 @@ import { generateText } from 'ai';
 import { z } from 'zod';
 
 import { inngest } from '@/inngest/client';
+import { proofreadRequestedEvent } from '@/inngest/events';
+import { logger } from '@/lib/logger';
 import { DEFAULT_GENERATION_OPTIONS, MODEL_ID, defaultModel } from '@/lib/ai/client';
 import {
   CONFIDENCE_ALGO_VERSION,
@@ -107,9 +109,9 @@ export const proofreadRunFn = inngest.createFunction(
     name: 'task · 校对主工作流',
     retries: 2,
     concurrency: { key: 'event.data.taskId', limit: 1 },
+    triggers: [proofreadRequestedEvent],
   },
-  { event: 'task/proofread.requested' },
-  async ({ event, step, attempt, logger }) => {
+  async ({ event, step, attempt }) => {
     const { taskId, userId, triggeredBy, requestedAt } = event.data;
     logger.info({ taskId, userId, triggeredBy, requestedAt, attempt }, '[proofread-run] 启动');
 
