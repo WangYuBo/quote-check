@@ -9,6 +9,7 @@ import {
   SIMILARITY_PARTIAL_THRESHOLD,
   computeConfidence,
 } from '@/lib/ai/confidence';
+import { isModerationRejection } from '@/lib/ai/moderation';
 import { retrievePassagesForQuote } from '@/lib/ai/retrieval';
 import { PROMPT_VERSION, loadPromptRaw } from '@/lib/ai/prompts';
 import { buildResultIdempotencyKey } from '@/lib/idempotency';
@@ -144,7 +145,33 @@ export const proofreadRunFn = inngest.createFunction(
 
     // ─── S2: moderation-gate ──────────────────────────────────────────
     const moderationResult = await step.run('moderation-gate', async () => {
-      // v1.0 骨架：直接通过（MAS-3 填充真实审核调用）
+      // MAS-3: probe call — 取前 3 段（≤600 字）发给 LLM，检测内容审核拒绝
+      // 签名 A（HTTP 非 2xx + content_filter 标记）和签名 B（2xx 但拒答模板）均覆盖
+      const sampleText = ctx.paragraphs
+        .slice(0, 3)
+        .map((p) => p.text)
+        .join('\n')
+        .slice(0, 600);
+
+      try {
+        const { text: probeOut } = await generateText({
+          model: defaultModel,
+          maxTokens: 64,
+          messages: [{ role: 'user', content: `请简要概括以下文段的主题（一句话）：\n${sampleText}` }],
+        });
+
+        // 签名 B：LLM 返回拒答模板
+        if (isModerationRejection({ body: { choices: [{ message: { content: probeOut } }] } })) {
+          return { rejected: true };
+        }
+      } catch (err) {
+        // 签名 A：HTTP 非 2xx + 审核标记
+        if (isModerationRejection(err)) {
+          return { rejected: true };
+        }
+        // 其他网络/超时错误不视为审核拒绝，继续执行
+      }
+
       return { rejected: false };
     });
 

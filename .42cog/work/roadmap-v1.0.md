@@ -29,13 +29,15 @@ owner: yubo
 
 ```
 v1.0-m1 基建就绪    ████████████████ 100%   ✓ 达成（2026-04-24）
-v1.0-m2 校对主流程  ████████░░░░░░░░  50%   ← 当前（MAS-1 ✓ MAS-2 ✓）
+v1.0-m2 校对主流程  ████████████░░░░  75%   ← 当前（MAS-1 ✓ MAS-2 ✓ MAS-3 ✓）
 v1.0-m3 上线前闭环  ░░░░░░░░░░░░░░░░   0%
 ```
 
 **MAS-1 基座达成（2026-04-24）**：POST /api/manuscripts 上传 → POST /api/tasks 发事件 → Inngest proofread-run 真实 LLM 消费（DeepSeek via 硅基流动）→ 三维度结果入 verification_result → /api/reports/:id 返回 JSON，UI 三维度卡片展示。全流程 E2E 验证通过（3 引用全部正确解析，normMatchStatus 中文归一化生效，无"LLM 返回格式异常"）。DG-m2.1 已决策：v1.0 选串行（选项 A，Inngest 免费层约束）。
 
 **MAS-2 参考为准绳达成（2026-04-24）**：references 上传 API + reference_paragraph 表（GIN trigram I-03）+ pg_trgm 段落级检索（rawSql 绕 drizzle array 序列化坑）+ stripForTrigram() 去标点归一化 + 四态 matchStatus（MATCH/PARTIAL_MATCH/NOT_MATCH/NOT_FOUND_IN_REF）+ result_reference_hit M:N 填充 + upload 页三阶段扩展 + reports 页命中区块。E2E：论语引文 PARTIAL_MATCH sim=0.647 pg_trgm ✓，非论语引文 NOT_FOUND_IN_REF ✓。DG-m2.2 阈值经验初值（0.75/0.40）固化，须真实语料回测后调整。map.txt 中性措辞 lint 延后至 MAS-2b。
+
+**MAS-3 拒绝显式达成（2026-04-25）**：moderation-gate 步骤从骨架（直接通过）升级为真实 probe call——取书稿前 3 段（≤600 字）发 LLM，签名 A（HTTP 非 2xx + content_filter 标记）和签名 B（2xx 但 isModerationRejection 检测拒答模板）双覆盖；拒绝时 task.status=REJECTED_BY_MODERATION。UI 加 rejected-skin（斜纹背景 + ShieldOff 图标 + 60% 透明度），与 spec-ui-design §7.3 一致。DG-m2.3 决策推迟：requireEmailVerification 在 m3 上线前决策。
 
 **m1 全部 7 项已达成**：
 
