@@ -4,6 +4,7 @@ import { inngest } from '@/inngest/client';
 import { costGuardFn } from '@/inngest/functions/cost-guard';
 import { pingFn } from '@/inngest/functions/ping';
 import { proofreadRunFn } from '@/inngest/functions/proofread-run';
+import { ttlDestroyFn } from '@/inngest/functions/ttl-destroy';
 import { env } from '@/lib/env';
 
 /**
@@ -18,6 +19,6 @@ import { env } from '@/lib/env';
  */
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [pingFn, proofreadRunFn, costGuardFn],
+  functions: [pingFn, proofreadRunFn, costGuardFn, ttlDestroyFn],
   signingKey: env.INNGEST_SIGNING_KEY,
 });

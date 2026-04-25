@@ -277,3 +277,47 @@ export async function getReport(taskId: string): Promise<ReportRow | null> {
     })) as ReportRow['results'],
   };
 }
+
+/** 列出用户所有任务（历史列表，L-10） */
+export async function listUserTasks(userId: string): Promise<{
+  id: string;
+  displayId: string;
+  status: string;
+  totalQuotes: number | null;
+  verifiedQuotes: number;
+  createdAt: Date;
+  completedAt: Date | null;
+  costActualCents: number | null;
+}[]> {
+  return db
+    .select({
+      id: task.id,
+      displayId: task.displayId,
+      status: task.status,
+      totalQuotes: task.totalQuotes,
+      verifiedQuotes: task.verifiedQuotes,
+      createdAt: task.createdAt,
+      completedAt: task.completedAt,
+      costActualCents: task.costActualCents,
+    })
+    .from(task)
+    .where(eq(task.userId, userId))
+    .orderBy(task.createdAt);
+}
+
+/** 查找 TTL 已过期且未销毁的任务（MAS-6） */
+export async function findExpiredTasks(): Promise<{
+  id: string;
+  manuscriptId: string;
+}[]> {
+  const { lt } = await import('drizzle-orm');
+  return db
+    .select({ id: task.id, manuscriptId: task.manuscriptId })
+    .from(task)
+    .where(lt(task.ttlExpiresAt, new Date()));
+}
+
+/** 标记任务已销毁（MAS-6 TTL destroy） */
+export async function markTaskDestroyed(taskId: string): Promise<void> {
+  await db.update(task).set({ destroyedAt: new Date() }).where(eq(task.id, taskId));
+}

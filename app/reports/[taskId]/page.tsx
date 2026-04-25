@@ -205,12 +205,36 @@ export default async function ReportPage({ params }: { params: Promise<{ taskId:
     <main className="min-h-screen bg-(--color-bg)">
       <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
         {/* 头部 */}
-        <div className="space-y-1">
-          <p className="text-xs text-(--color-fg-muted)">{report.task.displayId}</p>
-          <h1 className="text-2xl font-semibold text-(--color-fg)">引用核查报告</h1>
-          <p className="text-sm text-(--color-fg-muted)">
-            共 {results.length} 条引文 · 机器初审，终审权归编辑
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-xs text-(--color-fg-muted)">{report.task.displayId}</p>
+            <h1 className="text-2xl font-semibold text-(--color-fg)">引用核查报告</h1>
+            <p className="text-sm text-(--color-fg-muted)">
+              共 {results.length} 条引文 · 机器初审，终审权归编辑
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={`/api/reports/${taskId}/export?format=csv`}
+              download
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-(--color-border) bg-white px-3 py-2 text-sm text-(--color-fg-muted) hover:bg-gray-50 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              CSV
+            </a>
+            <a
+              href={`/api/reports/${taskId}/export-docx`}
+              download
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-(--color-border) bg-white px-3 py-2 text-sm text-(--color-fg-muted) hover:bg-gray-50 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Word
+            </a>
+          </div>
         </div>
 
         {/* 统计条 */}

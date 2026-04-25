@@ -43,6 +43,7 @@
     "@vercel/blob": "0.27.0",
     "ai": "3.4.33",
     "better-auth": "0.7.5",
+    "docx": "^9.6.1",
     "drizzle-orm": "0.36.4",
     "inngest": "3.27.5",
     "lucide-react": "^1.11.0",
