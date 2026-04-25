@@ -30,8 +30,8 @@ export async function retrievePassagesForQuote({
 
   const normalized = stripForTrigram(normalizeForCompare(quoteText, 'simplified'));
 
-  // pg_trgm similarity() — requires pg_trgm extension (I-02 + I-03 已装)
-  const rows = await rawSql`
+  // Step 1: pg_trgm similarity() — requires pg_trgm extension (I-02 + I-03 已装)
+  let rows = await rawSql`
     SELECT
       id,
       reference_id,
@@ -44,6 +44,23 @@ export async function retrievePassagesForQuote({
     ORDER BY sim DESC
     LIMIT ${topK}
   ` as { id: string; reference_id: string; seq: number; text: string; sim: string }[];
+
+  // Step 2: pg_trgm 无结果时降级到 LIKE 子串匹配（兜底短引文嵌入长段落的情况）
+  if (rows.length === 0 && normalized.length >= 2) {
+    rows = await rawSql`
+      SELECT
+        id,
+        reference_id,
+        seq,
+        text,
+        1.0 AS sim
+      FROM reference_paragraph
+      WHERE reference_id = ANY(${referenceIds})
+        AND text_normalized LIKE '%' || ${normalized} || '%'
+      ORDER BY seq ASC
+      LIMIT ${topK}
+    ` as { id: string; reference_id: string; seq: number; text: string; sim: string }[];
+  }
 
   return rows.map((r) => ({
     referenceId: r.reference_id,

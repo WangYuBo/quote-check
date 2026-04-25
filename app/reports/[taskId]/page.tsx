@@ -67,6 +67,7 @@ const VERDICT_LABEL: Record<string, string> = {
 function matchColor(status: string): string {
   if (status === 'MATCH') return 'text-(--color-verdict-match)';
   if (status === 'PARTIAL_MATCH') return 'text-(--color-verdict-variant)';
+  if (status === 'NOT_FOUND_IN_REF') return 'text-(--color-fg)';
   return 'text-(--color-verdict-notmatch)';
 }
 
@@ -137,7 +138,7 @@ function VerifyCard({ result }: { result: VerifyResult }) {
                 )}
               </div>
               {h.snippet && (
-                <p className="text-(--color-fg-muted) leading-relaxed line-clamp-3">
+                <p className="text-(--color-fg-muted) leading-relaxed">
                   {h.snippet}
                 </p>
               )}
@@ -177,7 +178,7 @@ function DimCell({
         {label_}
       </p>
       {explanation && !isNA && (
-        <p className="text-(--color-fg-muted) leading-relaxed line-clamp-3">{explanation}</p>
+        <p className="text-(--color-fg-muted) leading-relaxed">{explanation}</p>
       )}
     </div>
   );
