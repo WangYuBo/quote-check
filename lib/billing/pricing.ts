@@ -60,15 +60,13 @@ export const PRICING_VERSION = INTERNAL_PRICING_VERSION;
 
 /**
  * 按书稿字数预估用户费用（A03 / MAS-4）。
- * 用户结算公式：ceil(书稿字数 / 1000) × ¥3/千字，精确固定（errorMarginPct = 0）。
+ * 用户结算公式：ceil(书稿字数 / 1000) × ¥3/千字，精确固定。
  */
 export function estimateCostFen(charCount: number): {
-  quoteCountEstimate: number;
   estimatedFen: number;
-  errorMarginPct: number;
 } {
   const estimatedFen = Math.ceil(charCount / 1000) * USER_PRICE_FEN_PER_K_CHAR;
-  return { quoteCountEstimate: Math.ceil(charCount / 1000), estimatedFen, errorMarginPct: 0 };
+  return { estimatedFen };
 }
 
 /** 默认单任务费用上限（分）：5000 分 = ¥50 */

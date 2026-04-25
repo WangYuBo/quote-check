@@ -8,7 +8,7 @@
   },
   "packageManager": "bun@1.1.38",
   "scripts": {
-    "dev": "next dev",
+    "dev": "env -u http_proxy -u https_proxy next dev",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
