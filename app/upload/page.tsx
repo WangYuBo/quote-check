@@ -1,5 +1,6 @@
 'use client';
 
+import { Check } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { authClient } from '@/lib/auth-client';
@@ -17,11 +18,41 @@ interface RefItem {
   error: string | null;
 }
 
+type Step = 1 | 2 | 3;
+
+function StepIndicator({ current, step }: { current: Step; step: Step }) {
+  const isActive = current === step;
+  const isDone = current > step;
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
+          isDone
+            ? 'bg-(--color-primary) text-(--color-primary-fg)'
+            : isActive
+              ? 'bg-(--color-primary) text-(--color-primary-fg) ring-2 ring-(--color-primary)/30'
+              : 'bg-(--color-border) text-(--color-fg-muted)'
+        }`}
+      >
+        {isDone ? <Check size={16} /> : step}
+      </div>
+      <span
+        className={`text-sm hidden sm:inline ${
+          isActive ? 'text-(--color-fg) font-medium' : 'text-(--color-fg-muted)'
+        }`}
+      >
+        {step === 1 && '上传书稿'}
+        {step === 2 && '参考文献'}
+        {step === 3 && '开始核查'}
+      </span>
+    </div>
+  );
+}
+
 export default function UploadPage() {
   const router = useRouter();
   const [sessionChecked, setSessionChecked] = useState(false);
 
-  // 所有 hooks 必须在 early return 之前声明（React Rules of Hooks）
   const manuscriptInputRef = useRef<HTMLInputElement>(null);
   const refInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -41,6 +72,7 @@ export default function UploadPage() {
     unitPrice: string;
     estimatedDisplay: string;
   } | null>(null);
+  const [currentStep, setCurrentStep] = useState<Step>(1);
 
   useEffect(() => {
     authClient
@@ -59,8 +91,8 @@ export default function UploadPage() {
 
   if (!sessionChecked) {
     return (
-      <main className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center p-8">
-        <p className="text-[var(--color-fg-muted)]">检查登录状态…</p>
+      <main className="min-h-screen bg-(--color-bg) flex items-center justify-center p-8">
+        <p className="text-(--color-fg-muted)">检查登录状态…</p>
       </main>
     );
   }
@@ -94,6 +126,7 @@ export default function UploadPage() {
     setPreview({ filename: file.name, paragraphCount: data.paragraphCount ?? 0, charCount: data.charCount ?? 0 });
     setManuscriptId(data.manuscriptId ?? null);
     setStatus('idle');
+    setCurrentStep(2);
   }
 
   async function handleRefFile(file: File) {
@@ -143,6 +176,10 @@ export default function UploadPage() {
     setRefs((prev) => prev.filter((_, i) => i !== idx));
   }
 
+  function handleSkipRefs() {
+    setCurrentStep(3);
+  }
+
   async function doCreateTask(costConfirmed = false) {
     if (!manuscriptId) return;
     setStatus('creating');
@@ -158,7 +195,6 @@ export default function UploadPage() {
     });
 
     if (res.status === 402) {
-      // 费用超限，需要确认
       const data = (await res.json()) as {
         requiresConfirm: boolean;
         estimate: {
@@ -190,94 +226,149 @@ export default function UploadPage() {
   }
 
   const pendingRefs = refs.filter((r) => !r.referenceId && !r.uploading);
+  const allRefsDone = refs.length > 0 && refs.every((r) => r.referenceId !== null);
 
   return (
-    <main className="min-h-screen bg-(--color-bg) flex flex-col items-center justify-center p-8">
-      <div className="w-full max-w-xl space-y-8">
-        <div>
-          <h1 className="text-2xl font-semibold text-(--color-fg) mb-2">上传书稿</h1>
-          <p className="text-sm text-(--color-fg-muted) mb-6">
-            支持 .txt / .md / .docx，上限 20MB。系统对照参考文献从三个维度比对引文，终审权归编辑。
+    <main className="min-h-screen bg-(--color-bg)">
+      <div className="max-w-2xl mx-auto px-6 py-12 space-y-10">
+        {/* 标题 */}
+        <div className="text-center space-y-2">
+          <h1 className="text-2xl font-semibold text-(--color-fg)">新建核查任务</h1>
+          <p className="text-sm text-(--color-fg-muted)">
+            上传书稿，添加参考文献，系统自动比对引文
           </p>
-
-          {/* 书稿拖拽区 */}
-          <div
-            role="button"
-            tabIndex={0}
-            className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
-              dragging
-                ? 'border-(--color-primary) bg-blue-50'
-                : 'border-(--color-border) hover:border-(--color-primary)'
-            }`}
-            onClick={() => manuscriptInputRef.current?.click()}
-            onKeyDown={(e) => e.key === 'Enter' && manuscriptInputRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragging(false);
-              const file = e.dataTransfer.files[0];
-              if (file) void handleManuscriptFile(file);
-            }}
-          >
-            <input
-              ref={manuscriptInputRef}
-              type="file"
-              className="hidden"
-              accept=".txt,.md,.docx"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleManuscriptFile(f); }}
-            />
-            {status === 'uploading' ? (
-              <p className="text-(--color-fg-muted)">正在解析…</p>
-            ) : preview ? (
-              <div className="space-y-1">
-                <p className="font-medium text-(--color-fg)">{preview.filename}</p>
-                <p className="text-sm text-(--color-fg-muted)">
-                  {preview.paragraphCount} 段落 · {preview.charCount.toLocaleString()} 字符
-                </p>
-                <p className="text-xs text-(--color-fg-muted)">点击重新上传</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-(--color-fg)">拖拽或点击选择书稿文件</p>
-                <p className="text-sm text-(--color-fg-muted)">.txt / .md / .docx · 最大 20MB</p>
-              </div>
-            )}
-          </div>
         </div>
 
-        {/* 参考文献区（书稿上传后展示） */}
-        {manuscriptId && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium text-(--color-fg)">参考文献（可选）</h2>
-              <span className="text-xs text-(--color-fg-muted)">{refs.length}/{MAX_REFS}</span>
+        {/* 步骤指示器 */}
+        <div className="flex items-center justify-center gap-2">
+          <StepIndicator current={currentStep} step={1} />
+          <div className={`w-12 sm:w-20 h-px ${currentStep > 1 ? 'bg-(--color-primary)' : 'bg-(--color-border)'}`} />
+          <StepIndicator current={currentStep} step={2} />
+          <div className={`w-12 sm:w-20 h-px ${currentStep > 2 ? 'bg-(--color-primary)' : 'bg-(--color-border)'}`} />
+          <StepIndicator current={currentStep} step={3} />
+        </div>
+
+        {/* Step 1: 上传书稿 */}
+        {currentStep === 1 && (
+          <div className="rounded-xl border border-(--color-border) bg-(--color-card) p-8 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-7 h-7 rounded-full bg-(--color-primary) text-(--color-primary-fg) flex items-center justify-center text-xs font-medium">1</div>
+              <h2 className="text-lg font-medium text-(--color-fg)">上传书稿</h2>
             </div>
 
+            <div
+              role="button"
+              tabIndex={0}
+              className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${
+                dragging
+                  ? 'border-(--color-primary) bg-(--color-primary)/5 scale-[1.01]'
+                  : 'border-(--color-border) hover:border-(--color-primary) hover:bg-(--color-bg)'
+              }`}
+              onClick={() => manuscriptInputRef.current?.click()}
+              onKeyDown={(e) => e.key === 'Enter' && manuscriptInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                const file = e.dataTransfer.files[0];
+                if (file) void handleManuscriptFile(file);
+              }}
+            >
+              <input
+                ref={manuscriptInputRef}
+                type="file"
+                className="hidden"
+                accept=".txt,.md,.docx"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleManuscriptFile(f); }}
+              />
+              {status === 'uploading' ? (
+                <div className="space-y-3">
+                  <div className="w-8 h-8 border-2 border-(--color-primary) border-t-transparent rounded-full animate-spin mx-auto" />
+                  <p className="text-(--color-fg-muted)">正在解析书稿…</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="w-12 h-12 mx-auto rounded-xl bg-(--color-bg) border border-(--color-border) flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-(--color-fg-muted)">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-(--color-fg) font-medium">拖拽或点击选择书稿文件</p>
+                    <p className="text-sm text-(--color-fg-muted) mt-1">.txt / .md / .docx · 最大 20MB</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {errorMsg && status === 'error' && (
+              <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-2">{errorMsg}</p>
+            )}
+          </div>
+        )}
+
+        {/* Step 2: 参考文献 */}
+        {currentStep === 2 && (
+          <div className="rounded-xl border border-(--color-border) bg-(--color-card) p-8 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-7 h-7 rounded-full bg-(--color-primary) text-(--color-primary-fg) flex items-center justify-center text-xs font-medium">2</div>
+              <h2 className="text-lg font-medium text-(--color-fg)">参考文献 <span className="text-sm text-(--color-fg-muted) font-normal">（可选）</span></h2>
+            </div>
+
+            {/* 已上传书稿摘要 */}
+            {preview && (
+              <div className="rounded-lg bg-(--color-bg) border border-(--color-border) px-4 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Check size={16} className="text-(--color-verdict-match)" />
+                  <div>
+                    <p className="text-sm font-medium text-(--color-fg)">{preview.filename}</p>
+                    <p className="text-xs text-(--color-fg-muted)">{preview.paragraphCount} 段落 · {preview.charCount.toLocaleString()} 字符</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManuscriptId(null);
+                    setPreview(null);
+                    setCurrentStep(1);
+                  }}
+                  className="text-xs text-(--color-fg-muted) hover:text-(--color-fg)"
+                >
+                  更换
+                </button>
+              </div>
+            )}
+
             {/* 版权声明 */}
-            <label className="flex items-start gap-2 text-sm text-(--color-fg-muted) cursor-pointer">
+            <label className="flex items-start gap-2.5 text-sm text-(--color-fg-muted) cursor-pointer group">
               <input
                 type="checkbox"
                 checked={copyrightDeclared}
                 onChange={(e) => setCopyrightDeclared(e.target.checked)}
-                className="mt-0.5"
+                className="mt-0.5 accent-(--color-primary)"
               />
-              <span>
+              <span className="group-hover:text-(--color-fg) transition-colors">
                 本人确认上传的参考文献为自有版权、公有领域或已获授权使用，并对此承担相应责任。
               </span>
             </label>
 
-            {/* 已添加的参考文献列表 */}
+            {/* 参考文献列表 */}
             {refs.map((item, idx) => (
-              <div key={idx} className="border border-(--color-border) rounded-lg p-4 space-y-3">
+              <div key={idx} className="rounded-lg border border-(--color-border) p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-(--color-fg) truncate max-w-xs">
-                    {item.file.name}
-                  </span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-(--color-fg-muted) shrink-0">
+                      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
+                    </svg>
+                    <span className="text-sm font-medium text-(--color-fg) truncate">{item.file.name}</span>
+                  </div>
                   <button
                     type="button"
                     onClick={() => removeRef(idx)}
-                    className="text-xs text-(--color-fg-muted) hover:text-red-500"
+                    className="text-xs text-(--color-fg-muted) hover:text-red-500 shrink-0 ml-2"
+                    disabled={!!item.referenceId}
                   >
                     移除
                   </button>
@@ -289,13 +380,13 @@ export default function UploadPage() {
                     value={item.canonicalName}
                     onChange={(e) => setRefs((prev) => prev.map((r, i) => i === idx ? { ...r, canonicalName: e.target.value } : r))}
                     placeholder="规范名称（如：论语）"
-                    className="flex-1 text-sm border border-(--color-border) rounded-lg px-3 py-1.5 bg-(--color-bg) text-(--color-fg)"
+                    className="flex-1 text-sm border border-(--color-border) rounded-lg px-3 py-1.5 bg-(--color-bg) text-(--color-fg) placeholder:text-(--color-fg-muted)/50 focus:outline-none focus:ring-2 focus:ring-(--color-primary)/20 focus:border-(--color-primary)"
                     disabled={!!item.referenceId}
                   />
                   <select
                     value={item.role}
                     onChange={(e) => setRefs((prev) => prev.map((r, i) => i === idx ? { ...r, role: e.target.value as RefItem['role'] } : r))}
-                    className="text-sm border border-(--color-border) rounded-lg px-2 py-1.5 bg-(--color-bg) text-(--color-fg)"
+                    className="text-sm border border-(--color-border) rounded-lg px-2 py-1.5 bg-(--color-bg) text-(--color-fg) focus:outline-none focus:ring-2 focus:ring-(--color-primary)/20 focus:border-(--color-primary)"
                     disabled={!!item.referenceId}
                   >
                     <option value="CANON">原典</option>
@@ -306,18 +397,18 @@ export default function UploadPage() {
                   </select>
                 </div>
 
-                {item.error && (
-                  <p className="text-xs text-red-500">{item.error}</p>
-                )}
+                {item.error && <p className="text-xs text-red-500">{item.error}</p>}
 
                 {item.referenceId ? (
-                  <p className="text-xs text-green-600">✓ 已上传（{item.referenceId.slice(0, 8)}…）</p>
+                  <p className="text-xs text-(--color-verdict-match) flex items-center gap-1">
+                    <Check size={12} /> 已上传（{item.referenceId.slice(0, 8)}…）
+                  </p>
                 ) : (
                   <button
                     type="button"
                     onClick={() => void uploadRef(idx)}
                     disabled={item.uploading || !copyrightDeclared}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-(--color-primary) text-(--color-primary-fg) disabled:opacity-50"
+                    className="text-xs px-3 py-1.5 rounded-lg bg-(--color-primary) text-(--color-primary-fg) disabled:opacity-50 hover:opacity-90 transition-opacity"
                   >
                     {item.uploading ? '上传中…' : '确认上传'}
                   </button>
@@ -325,12 +416,12 @@ export default function UploadPage() {
               </div>
             ))}
 
-            {/* 添加参考文献按钮 */}
+            {/* 添加参考文献 */}
             {refs.length < MAX_REFS && (
               <button
                 type="button"
                 onClick={() => refInputRef.current?.click()}
-                className="w-full py-2.5 border-2 border-dashed border-(--color-border) rounded-xl text-sm text-(--color-fg-muted) hover:border-(--color-primary) transition-colors"
+                className="w-full py-3 border-2 border-dashed border-(--color-border) rounded-xl text-sm text-(--color-fg-muted) hover:border-(--color-primary) hover:text-(--color-primary) transition-colors"
               >
                 + 添加参考文献
               </button>
@@ -344,57 +435,140 @@ export default function UploadPage() {
             />
 
             {pendingRefs.length > 0 && (
-              <p className="text-xs text-(--color-fg-muted)">
-                ⚠ 有 {pendingRefs.length} 个参考文献尚未点击"确认上传"，不会计入本次核查。
+              <p className="text-xs text-(--color-fg-muted) flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-(--color-warning) inline-block" />
+                有 {pendingRefs.length} 个参考文献尚未点击"确认上传"，不会计入本次核查。
               </p>
             )}
+
+            {/* 底部操作 */}
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => setCurrentStep(1)}
+                className="text-sm text-(--color-fg-muted) hover:text-(--color-fg) transition-colors"
+              >
+                ← 返回上一步
+              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleSkipRefs}
+                  className="text-sm text-(--color-fg-muted) hover:text-(--color-fg) transition-colors"
+                >
+                  跳过此步骤
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(3)}
+                  disabled={pendingRefs.length > 0}
+                  className="px-4 py-2 rounded-lg bg-(--color-primary) text-(--color-primary-fg) text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {refs.length === 0 ? '下一步' : allRefsDone ? '下一步' : `下一步（${pendingRefs.length} 个未上传）`}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
-        {status === 'error' && (
-          <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-2">{errorMsg}</p>
+        {/* Step 3: 开始核查 */}
+        {currentStep === 3 && !costConfirmPending && (
+          <div className="rounded-xl border border-(--color-border) bg-(--color-card) p-8 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-7 h-7 rounded-full bg-(--color-primary) text-(--color-primary-fg) flex items-center justify-center text-xs font-medium">3</div>
+              <h2 className="text-lg font-medium text-(--color-fg)">确认并开始</h2>
+            </div>
+
+            {preview && (
+              <div className="rounded-xl bg-(--color-bg) border border-(--color-border) divide-y divide-(--color-border)">
+                <div className="px-5 py-4 flex items-center justify-between">
+                  <span className="text-sm text-(--color-fg-muted)">书稿</span>
+                  <span className="text-sm font-medium text-(--color-fg)">{preview.filename}</span>
+                </div>
+                <div className="px-5 py-4 flex items-center justify-between">
+                  <span className="text-sm text-(--color-fg-muted)">字数</span>
+                  <span className="text-sm font-medium text-(--color-fg)">{preview.charCount.toLocaleString()} 字</span>
+                </div>
+                <div className="px-5 py-4 flex items-center justify-between">
+                  <span className="text-sm text-(--color-fg-muted)">参考文献</span>
+                  <span className="text-sm font-medium text-(--color-fg)">{refs.filter((r) => r.referenceId).length} 份</span>
+                </div>
+                <div className="px-5 py-4 flex items-center justify-between">
+                  <span className="text-sm text-(--color-fg-muted)">预估费用</span>
+                  <span className="text-sm font-medium text-(--color-fg)">
+                    {preview.charCount.toLocaleString()} 字 × ¥3/千字 = 约 ¥{Math.max(1, Math.ceil(preview.charCount / 1000) * 3).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {errorMsg && (
+              <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-2">{errorMsg}</p>
+            )}
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => setCurrentStep(2)}
+                className="text-sm text-(--color-fg-muted) hover:text-(--color-fg) transition-colors"
+              >
+                ← 返回上一步
+              </button>
+              <button
+                type="button"
+                disabled={status === 'creating'}
+                onClick={() => void handleStart()}
+                className="px-6 py-2.5 rounded-xl bg-(--color-primary) text-(--color-primary-fg) font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {status === 'creating' ? '正在发起…' : '开始引用核查'}
+              </button>
+            </div>
+          </div>
         )}
 
         {/* 费用确认对话框 */}
         {costConfirmPending && (
-          <div className="border border-(--color-border) rounded-xl p-5 space-y-4">
-            <div className="space-y-1">
-              <p className="text-sm text-(--color-fg)">
-                {costConfirmPending.charCount.toLocaleString()} 字（{costConfirmPending.kiloChars} 千字）× {costConfirmPending.unitPrice} = {costConfirmPending.estimatedDisplay}
-              </p>
-              <p className="text-xs text-(--color-fg-muted)">
-                点击"确认，开始核查"即表示同意此费用。
-              </p>
+          <div className="rounded-xl border border-(--color-border) bg-(--color-card) p-8 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-7 h-7 rounded-full bg-(--color-primary) text-(--color-primary-fg) flex items-center justify-center text-xs font-medium">3</div>
+              <h2 className="text-lg font-medium text-(--color-fg)">确认并开始</h2>
             </div>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => void handleConfirmCost()}
-                disabled={status === 'creating'}
-                className="flex-1 py-2 rounded-lg bg-(--color-primary) text-(--color-primary-fg) text-sm font-medium hover:opacity-90 disabled:opacity-50"
-              >
-                {status === 'creating' ? '发起中…' : '确认，开始核查'}
-              </button>
+
+            <div className="rounded-xl bg-(--color-bg) border border-(--color-border) px-5 py-6 text-center space-y-2">
+              <p className="text-lg font-semibold text-(--color-fg) font-[family-name:var(--font-serif)]">
+                {costConfirmPending.charCount.toLocaleString()} 字（{costConfirmPending.kiloChars} 千字）× {costConfirmPending.unitPrice}
+              </p>
+              <p className="text-2xl font-bold text-(--color-fg)">{costConfirmPending.estimatedDisplay}</p>
+              <p className="text-sm text-(--color-fg-muted)">点击"确认，开始核查"即表示同意此费用。</p>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
               <button
                 type="button"
                 onClick={() => setCostConfirmPending(null)}
-                className="px-4 py-2 rounded-lg border border-(--color-border) text-(--color-fg-muted) text-sm hover:bg-(--color-bg)"
+                className="text-sm text-(--color-fg-muted) hover:text-(--color-fg) transition-colors"
               >
-                取消
+                ← 返回上一步
               </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCostConfirmPending(null)}
+                  className="px-4 py-2 rounded-lg border border-(--color-border) text-(--color-fg-muted) text-sm hover:bg-(--color-bg) transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleConfirmCost()}
+                  disabled={status === 'creating'}
+                  className="px-6 py-2.5 rounded-xl bg-(--color-primary) text-(--color-primary-fg) font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {status === 'creating' ? '发起中…' : '确认，开始核查'}
+                </button>
+              </div>
             </div>
           </div>
-        )}
-
-        {preview && manuscriptId && !costConfirmPending && (
-          <button
-            type="button"
-            disabled={status === 'creating'}
-            onClick={() => void handleStart()}
-            className="w-full py-3 rounded-xl bg-(--color-primary) text-(--color-primary-fg) font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {status === 'creating' ? '正在发起…' : '开始引用核查'}
-          </button>
         )}
       </div>
     </main>

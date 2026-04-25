@@ -72,8 +72,8 @@ function matchColor(status: string): string {
 }
 
 function confidenceBg(confidence: number): string {
-  if (confidence < 0.6) return 'bg-yellow-50 border-yellow-300';
-  return 'bg-white border-(--color-border)';
+  if (confidence < 0.6) return 'border-yellow-300 bg-yellow-50/50';
+  return 'border-(--color-border) bg-(--color-card)';
 }
 
 function VerifyCard({ result }: { result: VerifyResult }) {
@@ -82,16 +82,16 @@ function VerifyCard({ result }: { result: VerifyResult }) {
   const lowConf = conf < 0.6;
 
   return (
-    <div className={`rounded-xl border p-5 space-y-4 ${confidenceBg(conf)}`}>
+    <div className={`rounded-xl border p-5 space-y-4 shadow-sm ${confidenceBg(conf)}`}>
       {/* 引文头部 */}
       <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 space-y-1">
-          <p className="font-medium text-gray-900 leading-snug">「{result.quoteText}」</p>
+        <div className="flex-1 space-y-1.5">
+          <p className="text-base font-medium text-(--color-fg) leading-relaxed font-[family-name:var(--font-serif)]">「{result.quoteText}」</p>
           {result.sourceWorkHint && (
             <p className="text-xs text-(--color-fg-muted)">出自 {result.sourceWorkHint}</p>
           )}
         </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
           <span className={`text-xs font-medium ${matchColor(result.matchStatus)}`}>
             {MATCH_LABEL[result.matchStatus] ?? result.matchStatus}
           </span>
@@ -102,7 +102,7 @@ function VerifyCard({ result }: { result: VerifyResult }) {
       </div>
 
       {/* 三维度 */}
-      <div className="grid grid-cols-3 gap-3 text-xs">
+      <div className="grid grid-cols-3 gap-3">
         <DimCell
           label="字词准确性"
           verdict={result.verdictTextAccuracy.verdict}
@@ -122,10 +122,10 @@ function VerifyCard({ result }: { result: VerifyResult }) {
 
       {/* 参考文献命中 */}
       {result.referenceHits.length > 0 && (
-        <div className="space-y-2 border-t border-(--color-border) pt-3">
+        <div className="space-y-2 border-t border-(--color-border) pt-4">
           <p className="text-xs text-(--color-fg-muted) font-medium">参考文献命中</p>
           {result.referenceHits.map((h) => (
-            <div key={h.referenceId} className="rounded-lg bg-gray-50 p-3 text-xs space-y-1">
+            <div key={h.referenceId} className="rounded-lg bg-(--color-bg) border border-(--color-border) p-3 text-xs space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-(--color-fg)">
                   {h.canonicalName}
@@ -164,10 +164,10 @@ function DimCell({
   const isNA = verdict === 'NOT_APPLICABLE';
 
   return (
-    <div className="rounded-lg border border-(--color-border) bg-white p-3 space-y-1.5">
-      <p className="text-(--color-fg-muted)">{label}</p>
+    <div className="rounded-lg border border-(--color-border) bg-(--color-card) p-3 space-y-1.5">
+      <p className="text-xs text-(--color-fg-muted)">{label}</p>
       <p
-        className={`font-medium ${
+        className={`text-sm font-semibold ${
           isNA
             ? 'text-(--color-fg-muted)'
             : isGood
@@ -178,7 +178,7 @@ function DimCell({
         {label_}
       </p>
       {explanation && !isNA && (
-        <p className="text-(--color-fg-muted) leading-relaxed">{explanation}</p>
+        <p className="text-xs text-(--color-fg-muted) leading-relaxed">{explanation}</p>
       )}
     </div>
   );
@@ -218,7 +218,7 @@ export default async function ReportPage({ params }: { params: Promise<{ taskId:
             <a
               href={`/api/reports/${taskId}/export?format=csv`}
               download
-              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-(--color-border) bg-white px-3 py-2 text-sm text-(--color-fg-muted) hover:bg-gray-50 transition-colors"
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-(--color-border) bg-(--color-card) px-3 py-2 text-sm text-(--color-fg-muted) hover:bg-(--color-bg) hover:text-(--color-fg) transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
@@ -228,7 +228,7 @@ export default async function ReportPage({ params }: { params: Promise<{ taskId:
             <a
               href={`/api/reports/${taskId}/export-docx`}
               download
-              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-(--color-border) bg-white px-3 py-2 text-sm text-(--color-fg-muted) hover:bg-gray-50 transition-colors"
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-(--color-border) bg-(--color-card) px-3 py-2 text-sm text-(--color-fg-muted) hover:bg-(--color-bg) hover:text-(--color-fg) transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
@@ -243,17 +243,17 @@ export default async function ReportPage({ params }: { params: Promise<{ taskId:
           <div className="grid grid-cols-4 gap-3">
             {(
               [
-                ['符合参考', results.filter((r) => r.matchStatus === 'MATCH').length],
-                ['部分符合', results.filter((r) => r.matchStatus === 'PARTIAL_MATCH').length],
-                ['不符合', results.filter((r) => r.matchStatus === 'NOT_MATCH').length],
-                ['未找到', results.filter((r) => r.matchStatus === 'NOT_FOUND_IN_REF').length],
-              ] as [string, number][]
-            ).map(([label, count]) => (
+                ['符合参考', results.filter((r) => r.matchStatus === 'MATCH').length, 'text-(--color-verdict-match)'],
+                ['部分符合', results.filter((r) => r.matchStatus === 'PARTIAL_MATCH').length, 'text-(--color-verdict-variant)'],
+                ['不符合', results.filter((r) => r.matchStatus === 'NOT_MATCH').length, 'text-(--color-verdict-notmatch)'],
+                ['未找到', results.filter((r) => r.matchStatus === 'NOT_FOUND_IN_REF').length, 'text-(--color-fg)'],
+              ] as [string, number, string][]
+            ).map(([label, count, color]) => (
               <div
                 key={label}
-                className="rounded-xl border border-(--color-border) bg-white p-4 text-center space-y-1"
+                className="rounded-xl border border-(--color-border) bg-(--color-card) p-4 text-center space-y-1 shadow-sm"
               >
-                <p className="text-2xl font-bold text-(--color-fg)">{count}</p>
+                <p className={`text-2xl font-bold ${color}`}>{count}</p>
                 <p className="text-xs text-(--color-fg-muted)">{label}</p>
               </div>
             ))}
@@ -262,7 +262,7 @@ export default async function ReportPage({ params }: { params: Promise<{ taskId:
 
         {/* 引文卡片列表 */}
         {results.length === 0 ? (
-          <div className="rounded-xl border border-(--color-border) bg-white p-10 text-center">
+          <div className="rounded-xl border border-(--color-border) bg-(--color-card) p-12 text-center shadow-sm">
             <p className="text-(--color-fg-muted)">未找到引文</p>
           </div>
         ) : (

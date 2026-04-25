@@ -73,11 +73,11 @@ export default function TaskPage({ params }: { params: Promise<{ id: string }> }
       : null;
 
   return (
-    <main className="min-h-screen bg-(--color-bg) flex flex-col items-center justify-center p-8">
-      <div className="w-full max-w-md text-center space-y-6">
+    <main className="min-h-screen bg-(--color-bg)">
+      <div className="max-w-lg mx-auto px-6 py-16">
         {task ? (
-          <>
-            <div className="space-y-1">
+          <div className="rounded-xl border border-(--color-border) bg-(--color-card) p-8 space-y-6 text-center">
+            <div className="space-y-2">
               <p className="text-xs text-(--color-fg-muted)">{task.displayId}</p>
               <h1 className="text-xl font-semibold text-(--color-fg)">
                 {STATUS_LABELS[task.status] ?? task.status}
@@ -85,11 +85,14 @@ export default function TaskPage({ params }: { params: Promise<{ id: string }> }
             </div>
 
             {task.status === 'VERIFYING' && (
-              <div className="space-y-2">
-                <div className="w-full bg-(--color-border) rounded-full h-2">
+              <div className="space-y-4">
+                <div className="w-full bg-(--color-border) rounded-full h-2 overflow-hidden">
                   <div
-                    className="bg-(--color-primary) h-2 rounded-full transition-all duration-500"
-                    style={{ width: progress !== null ? `${progress}%` : '10%' }}
+                    className="h-full rounded-full transition-all duration-700 ease-out"
+                    style={{
+                      width: progress !== null ? `${progress}%` : '10%',
+                      background: 'linear-gradient(90deg, var(--color-primary), oklch(0.65 0.12 195))',
+                    }}
                   />
                 </div>
                 <p className="text-sm text-(--color-fg-muted)">
@@ -101,8 +104,8 @@ export default function TaskPage({ params }: { params: Promise<{ id: string }> }
             )}
 
             {task.status === 'PAUSED_COST' && (
-              <div className="border border-(--color-border) rounded-xl px-4 py-4 space-y-2">
-                <div className="flex items-center gap-2 text-(--color-fg-muted)">
+              <div className="rounded-xl border border-(--color-border) bg-(--color-bg) px-5 py-5 space-y-2">
+                <div className="flex items-center justify-center gap-2 text-(--color-fg-muted)">
                   <PauseCircle size={18} />
                   <span className="text-sm font-medium">任务已暂停</span>
                 </div>
@@ -113,33 +116,29 @@ export default function TaskPage({ params }: { params: Promise<{ id: string }> }
             )}
 
             {task.status === 'REJECTED_BY_MODERATION' && (
-              <div
-                className="rounded-xl px-4 py-5 space-y-3 opacity-60"
-                style={{
-                  background:
-                    'repeating-linear-gradient(-45deg,#f3f4f6,#f3f4f6 4px,#e5e7eb 4px,#e5e7eb 8px)',
-                }}
-              >
+              <div className="rounded-xl border border-(--color-border) bg-(--color-bg) px-5 py-5 space-y-2">
                 <div className="flex items-center justify-center gap-2 text-(--color-fg-muted)">
-                  <ShieldOff size={20} />
-                  <span className="text-sm font-medium">审核未通过，无法校对</span>
+                  <ShieldOff size={18} />
+                  <span className="text-sm font-medium">审核未通过</span>
                 </div>
-                <p className="text-xs text-(--color-fg-muted) text-center">
+                <p className="text-xs text-(--color-fg-muted)">
                   本书稿内容未通过平台内容审核，核查任务已终止。如有疑问请联系支持。
                 </p>
               </div>
             )}
 
             {task.status === 'PENDING_PARSE' && (
-              <div className="flex justify-center">
+              <div className="flex justify-center py-4">
                 <div className="w-8 h-8 border-2 border-(--color-primary) border-t-transparent rounded-full animate-spin" />
               </div>
             )}
-          </>
+          </div>
         ) : error ? (
-          <p className="text-sm text-red-600">{error}</p>
+          <div className="rounded-xl border border-(--color-border) bg-(--color-card) p-8 text-center">
+            <p className="text-sm text-red-600">{error}</p>
+          </div>
         ) : (
-          <div className="flex justify-center">
+          <div className="flex justify-center py-16">
             <div className="w-8 h-8 border-2 border-(--color-primary) border-t-transparent rounded-full animate-spin" />
           </div>
         )}
