@@ -21,6 +21,27 @@ export default function UploadPage() {
   const router = useRouter();
   const [sessionChecked, setSessionChecked] = useState(false);
 
+  // 所有 hooks 必须在 early return 之前声明（React Rules of Hooks）
+  const manuscriptInputRef = useRef<HTMLInputElement>(null);
+  const refInputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'uploading' | 'creating' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [preview, setPreview] = useState<{
+    filename: string;
+    paragraphCount: number;
+    charCount: number;
+  } | null>(null);
+  const [manuscriptId, setManuscriptId] = useState<string | null>(null);
+  const [refs, setRefs] = useState<RefItem[]>([]);
+  const [copyrightDeclared, setCopyrightDeclared] = useState(false);
+  const [costConfirmPending, setCostConfirmPending] = useState<{
+    quoteCountEstimate: number;
+    estimatedDisplay: string;
+    errorMarginPct: number;
+    thresholdDisplay: string;
+  } | null>(null);
+
   useEffect(() => {
     authClient
       .getSession()
@@ -43,26 +64,6 @@ export default function UploadPage() {
       </main>
     );
   }
-
-  const manuscriptInputRef = useRef<HTMLInputElement>(null);
-  const refInputRef = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'uploading' | 'creating' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState('');
-  const [preview, setPreview] = useState<{
-    filename: string;
-    paragraphCount: number;
-    charCount: number;
-  } | null>(null);
-  const [manuscriptId, setManuscriptId] = useState<string | null>(null);
-  const [refs, setRefs] = useState<RefItem[]>([]);
-  const [copyrightDeclared, setCopyrightDeclared] = useState(false);
-  const [costConfirmPending, setCostConfirmPending] = useState<{
-    quoteCountEstimate: number;
-    estimatedDisplay: string;
-    errorMarginPct: number;
-    thresholdDisplay: string;
-  } | null>(null);
 
   function validateFile(file: File): string | null {
     const ext = file.name.match(/\.[^.]+$/)?.[0]?.toLowerCase() ?? '';
