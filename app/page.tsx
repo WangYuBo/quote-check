@@ -15,7 +15,7 @@ export default function HomePage() {
 
       <div className="mt-6">
         <Link
-          href="/upload"
+          href="/login"
           className="inline-block px-6 py-3 rounded-xl bg-[var(--color-primary)] text-[var(--color-primary-fg)] font-medium text-sm hover:opacity-90 transition-opacity"
         >
           上传书稿，开始核查

@@ -1,7 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { authClient } from '@/lib/auth-client';
 
 const ALLOWED_EXT = ['.txt', '.md', '.docx'];
 const MAX_SIZE = 20 * 1024 * 1024;
@@ -18,6 +19,31 @@ interface RefItem {
 
 export default function UploadPage() {
   const router = useRouter();
+  const [sessionChecked, setSessionChecked] = useState(false);
+
+  useEffect(() => {
+    authClient
+      .getSession()
+      .then(({ data }) => {
+        if (!data?.user) {
+          router.push('/login');
+        } else {
+          setSessionChecked(true);
+        }
+      })
+      .catch(() => {
+        router.push('/login');
+      });
+  }, [router]);
+
+  if (!sessionChecked) {
+    return (
+      <main className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center p-8">
+        <p className="text-[var(--color-fg-muted)]">检查登录状态…</p>
+      </main>
+    );
+  }
+
   const manuscriptInputRef = useRef<HTMLInputElement>(null);
   const refInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -58,10 +84,10 @@ export default function UploadPage() {
     fd.append('file', file);
 
     const res = await fetch('/api/manuscripts', { method: 'POST', body: fd });
-    const data = (await res.json()) as {
+    let data: {
       manuscriptId?: string; paragraphCount?: number; charCount?: number; error?: string;
     };
-
+    try { data = await res.json() as typeof data; } catch { data = {}; }
     if (!res.ok) { setErrorMsg(data.error ?? '上传失败'); setStatus('error'); return; }
 
     setPreview({ filename: file.name, paragraphCount: data.paragraphCount ?? 0, charCount: data.charCount ?? 0 });
@@ -103,8 +129,8 @@ export default function UploadPage() {
     fd.append('copyrightDeclared', 'true');
 
     const res = await fetch('/api/references', { method: 'POST', body: fd });
-    const data = (await res.json()) as { referenceId?: string; error?: string };
-
+    let data: { referenceId?: string; error?: string };
+    try { data = await res.json() as typeof data; } catch { data = {}; }
     if (!res.ok) {
       setRefs((prev) => prev.map((r, i) => i === idx ? { ...r, uploading: false, error: data.error ?? '上传失败' } : r));
     } else {

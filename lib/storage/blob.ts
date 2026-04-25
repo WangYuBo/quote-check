@@ -5,7 +5,7 @@ async function uploadToBlob(
   buffer: Buffer,
   mimeType: string,
 ): Promise<{ url: string; pathname: string }> {
-  const blob = await put(path, buffer, { access: 'public', contentType: mimeType });
+  const blob = await put(path, buffer, { access: 'private' as 'public', contentType: mimeType });
   return { url: blob.url, pathname: blob.pathname };
 }
 
