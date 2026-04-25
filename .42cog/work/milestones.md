@@ -56,6 +56,8 @@ updated: 2026-04-20
 
 ## 已完成（🟢）
 
+- `2026-04-25` | F | 🟢 | **m3 代码闭环（待部署）** — MAS-5 CSV+Word 双格式导出（版本戳 + 三维度独立列）+ MAS-6 TTL销毁 cron + Pino logger + 观测接入（/api/admin/health + /api/admin/audit 审计日志 API）+ MS-L-11 协议签署弹窗 + E2E Playwright 骨架（L-01/02/03/07/10）+ 决策门 DG-m2.3/DG-m3.1/DG-m3.2 落盘；typecheck ✓ lint ✓；待完成：vercel deploy + neon main 迁移 + inngest sync | `app/api/reports/[taskId]/export*` · `inngest/functions/ttl-destroy.ts` · `lib/logger.ts` · `app/api/admin/` · `components/AgreementModal.tsx` · `e2e/smoke.spec.ts`
+
 - `2026-04-25` | M | 🟢 | **v1.0-m2 校对主流程达成** — MAS-1~4 全部完成，m2 判据满足 | roadmap-v1.0.md
 
 - `2026-04-25` | F | 🟢 | **MAS-4 成本透明** — lib/ai/cost.ts + costGuardFn（Inngest 费用守卫）+ proofread-run token 费用追踪 + POST /api/tasks 402 confirm 流 + 上传页费用确认对话框 + PAUSED_COST UI。E2E：cost-guard 在 costActual=10 > 3×1.5=4.5 时正确暂停任务 ✓ | `lib/ai/cost.ts` · `inngest/functions/cost-guard.ts` · `app/upload/page.tsx`
