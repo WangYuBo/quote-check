@@ -56,11 +56,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2. 上传到 Vercel Blob（若 token 是 placeholder 则跳过，本地开发用 local-only 占位）
+  // 2. 上传到 Vercel Blob（本地开发 / token 无效时跳过）
   let url = `local://manuscripts/${Date.now()}-${file.name}`;
   let pathname = url;
   const blobToken = process.env['BLOB_READ_WRITE_TOKEN'] ?? '';
-  if (!blobToken.includes('placeholder')) {
+  if (!blobToken.includes('placeholder') && process.env['NODE_ENV'] !== 'development') {
     const uploaded = await uploadManuscriptBlob(file.name, buffer, mimeType);
     url = uploaded.url;
     pathname = uploaded.pathname;
