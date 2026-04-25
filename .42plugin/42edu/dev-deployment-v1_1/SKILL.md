@@ -1,189 +1,173 @@
 ---
 name: dev-deployment-v1
-description: "Use when deploying Next.js projects to EdgeOne Pages - detects SSG/SSR project type, supports local CLI deployment or CNB pipeline, handles environment variables and region configuration (global/overseas)."
-version: "1.0"
+description: "Deploy quote-check (Next.js SSR) to Vercel — vercel CLI, env management, Inngest sync, migrations, and integration checks."
+version: "1.1"
 ---
 
-# dev-deployment-v1: Next.js to EdgeOne Pages Deployment
+# dev-deployment-v1.1: Next.js SSR → Vercel Deployment
 
 ## Overview
 
-Deploy Next.js projects to EdgeOne Pages with automatic project type detection. Supports both local CLI deployment and CNB (Cloud Native Build) pipeline deployment.
+Deploy the quote-check project (Next.js 16 App Router · SSR) to Vercel using Fluid Compute (default, not Edge Functions).
 
-## When to Use
+This skill is for Vercel deployment only. **Do not use** for EdgeOne Pages, Netlify, etc.
 
-- Deploying Next.js project to EdgeOne Pages
-- Setting up CI/CD pipeline with CNB for EdgeOne
-- First-time deployment requiring environment variable configuration
-- Updating existing EdgeOne Pages deployment
+## Project Stack
 
-**Don't use for:**
-- Non-Next.js projects
-- Deploying to other platforms (Vercel, Netlify, etc.)
+| Dimension | Value |
+|-----------|-------|
+| Framework | Next.js 16 (App Router) |
+| Rendering | SSR (Fluid Compute), not SSG |
+| Database | Neon PostgreSQL (external) |
+| Queue | Inngest Cloud (external) |
+| AI | SiliconFlow (DeepSeek, external API) |
+| Storage | Vercel Blob |
+| Auth | Better Auth |
+| Config | `vercel.json` (`{ "framework": "nextjs" }`) |
 
-## Quick Reference
+## Prerequisites
 
-| Task | Action |
-|------|--------|
-| Detect project type | Check for `out/` folder (SSG) or `.next/` folder (SSR) |
-| Check CLI installed | `which edgeone` or `edgeone --version` |
-| Install CLI | `bun add -g edgeone` |
-| Local deploy (SSG) | `edgeone pages deploy ./out -n <project-name> -a <area>` |
-| Local deploy (SSR) | `edgeone pages deploy . -n <project-name> -a <area>` |
-| CNB deploy | Create `.cnb.yml` and push to repository |
+1. Vercel CLI installed: `vercel --version`
+2. Logged in: `vercel whoami`
+3. Vercel project linked (`vercel link`)
+4. Environment variables set (see §Environment Variables)
 
-## Workflow
-
-### Step 1: Detect Project Type
+### Install CLI
 
 ```bash
-# Check project type
-if [ -d "out" ] && [ "$(ls -A out 2>/dev/null)" ]; then
-    echo "SSG project detected"
-elif [ -d ".next" ]; then
-    echo "SSR project detected"
-else
-    echo "Build project first: bun run build"
-fi
+npm i -g vercel
+vercel login
 ```
 
-| Type | Detection | Deploy Target |
-|------|-----------|---------------|
-| SSG | `out/` folder exists and not empty | `./out` folder |
-| SSR | `.next/` folder exists, no `out/` | `.` (entire project) |
+## Deployment Workflow
 
-### Step 2: Check Prerequisites
+### Step 1: Commit
 
-1. **EdgeOne CLI installed?**
-   ```bash
-   edgeone --version
-   ```
-   If not: `bun add -g edgeone`
-
-2. **EdgeOne login status?**
-   ```bash
-   edgeone whoami
-   ```
-   If not logged in: `edgeone login`
-
-### Step 3: Extract Parameters from Conversation
-
-**Extract from user message first, only ask for missing parameters:**
-
-| Parameter | Keywords to detect | Default |
-|-----------|-------------------|---------|
-| Project name | `-n`, `name`, quoted strings like `"my-project"` | Ask user |
-| Region | `overseas`/`海外` → overseas; `global`/`国内`/`中国` → global | Ask user |
-| Method | `cnb`/`流水线` → CNB; `local`/`本地` → Local | Local push |
-
-**Example:** User says "Deploy this project as skill-test01, use overseas nodes"
-→ Extract: name=`skill-test01`, area=`overseas`, method=local
-
-Only ask for parameters not mentioned in the conversation.
-
-### Step 4: Deploy
-
-#### Option A: Local Push
-
-**For SSG projects:**
 ```bash
-edgeone pages deploy ./out -n <project-name> -a <area>
+git add -A
+git commit -m "<semantic commit message>"
 ```
 
-**For SSR projects:**
+### Step 2: Deploy to Vercel
 
-First deployment (no existing project):
-1. Deploy directly to create project:
 ```bash
-edgeone pages deploy . -n <project-name> -a <area>
-```
-2. After deployment succeeds, output reminder:
-```
-请在 项目设置-环境变量 中填写项目的环境变量，否则可能影响项目正常运行。
-https://pages.edgeone.ai/zh/document/build-guide#c51018ad-71af-43a6-83af-acbc3690c653
+# Production deploy
+vercel --prod
 ```
 
-Update deployment (project exists):
+Vercel automatically:
+1. Installs dependencies (detects `bun.lockb`)
+2. Builds (`next build` with Turbopack)
+3. Deploys artifacts (`.next/` + serverless functions)
+4. Registers all routes from `app/` directory
+
+### Step 3: Inngest Sync
+
+After deployment, make Inngest Cloud aware of new functions:
+
 ```bash
-edgeone pages deploy . -n <project-name> -a <area>
+# Inngest Cloud → Your project → "Sync" button
+# Or via Inngest CLI if auto-sync is configured
 ```
 
-#### Option B: CNB Push
+Functions registered in `app/api/inngest/route.ts` are auto-exposed.
 
-1. Check remote repository connection:
-   ```bash
-   git remote -v
-   ```
+### Step 4: Database Migration (if schema changed)
 
-2. Detect main branch name (for CNB trigger configuration):
-   ```bash
-   # Get main branch name, defaults to master if no git initialized
-   if git rev-parse --git-dir > /dev/null 2>&1; then
-       MAIN_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-       [ -z "$MAIN_BRANCH" ] && MAIN_BRANCH="master"
-   else
-       MAIN_BRANCH="master"
-   fi
-   echo "Main branch: $MAIN_BRANCH"
-   ```
+```bash
+# Generate migration (first time or schema change)
+bun run db:generate
 
-3. Check existing `.cnb.yml` configuration (if exists):
-   ```bash
-   # If .cnb.yml exists, check if branch name matches
-   if [ -f ".cnb.yml" ]; then
-       # Get branch name configured in file (first top-level key, usually master: or main:)
-       CNB_BRANCH=$(grep -E "^(master|main):" .cnb.yml | head -1 | sed 's/://')
-       if [ -n "$CNB_BRANCH" ] && [ "$CNB_BRANCH" != "$MAIN_BRANCH" ]; then
-           echo "Warning: Branch in .cnb.yml ($CNB_BRANCH) doesn't match current main branch ($MAIN_BRANCH)"
-           echo "Need to replace '$CNB_BRANCH:' with '$MAIN_BRANCH:' in .cnb.yml"
-       fi
-   fi
-   ```
-   - If branch names don't match, update the branch name at the beginning of `.cnb.yml`
-   - Example: change `master:` to `main:`, or vice versa
+# Apply to Neon production
+bun run db:migrate
 
-4. Create or update `.cnb.yml`:
-   - If not exists, create using appropriate template:
-     - SSG: Use `assets/ssg-cnb-template.yml`
-     - SSR: Use `assets/ssr-cnb-template.yml`
-   - **Important**: Ensure branch name in file matches detected main branch
+# Apply hand-written triggers
+bun run db:triggers
 
-5. Remind user to:
-   - Create secret repository with `EDGEONE_API_TOKEN`
-   - Update imports URL in `.cnb.yml`
+# Verify
+bun run db:check
+```
 
-6. Commit and push:
-   ```bash
-   git add .cnb.yml
-   git commit -m "Add CNB deployment configuration"
-   git push
-   ```
+## Environment Variables
 
-## SSG vs SSR Differences
+All validated by `lib/env.ts` Zod schema. Application code **must not** read `process.env` directly.
 
-| Aspect | SSG | SSR |
-|--------|-----|-----|
-| Build output | `./out` folder | `.next` folder |
-| Deploy target | `./out` only | Entire project |
-| CNB build step | Yes (bun install + build) | No (EdgeOne builds) |
-| Environment vars | Optional | Often required |
-| First deploy | Direct | Direct, then configure env vars |
+| Variable | Description | Source |
+|----------|-------------|--------|
+| `DATABASE_URL` | Neon PostgreSQL connection string | Neon Dashboard |
+| `BETTER_AUTH_SECRET` | Better Auth secret (≥32 chars) | `openssl rand -hex 32` |
+| `BETTER_AUTH_URL` | Deployment domain | `https://<project>.vercel.app` |
+| `SILICONFLOW_API_KEY` | SiliconFlow API key | SiliconFlow Console |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob token | Vercel Storage |
+| `INNGEST_EVENT_KEY` | Inngest event key | Inngest Cloud |
+| `INNGEST_SIGNING_KEY` | Inngest signing key | Inngest Cloud |
+| `LOG_LEVEL` | Pino log level (default info) | — |
+| `TTL_DAYS` | Data retention days (default 7) | — |
+| `DEMO_MODE` | Demo mode flag | — |
 
-## Common Mistakes
+### Set via Vercel CLI
 
-| Mistake | Why It Fails | Fix |
-|---------|--------------|-----|
-| SSR project missing environment variables | Runtime errors after deployment | Configure env vars in EdgeOne console after first deploy |
-| Wrong deploy target for SSG | Uploads unnecessary files | Use `./out` not `.` |
-| Missing EDGEONE_API_TOKEN in CNB | Pipeline fails authentication | Create secret repository with token |
-| Using global area with overseas APIs | API calls blocked in China | Use `overseas` area |
-| Forgot to build before deploy | No `out/` folder for SSG | Run `bun run build` first |
+```bash
+vercel env add DATABASE_URL
+vercel env add BETTER_AUTH_SECRET
+# ... add each variable
+```
+
+Or via Vercel Dashboard > Project > Settings > Environment Variables.
+
+### Environment Isolation
+
+- **Production**: Real database / API keys
+- **Preview**: Staging database / test keys
+- **Development**: Local `.env` file (not committed)
+
+## Project Type
+
+**Important**: This project is **not** SSG. Next.js 16 App Router + API routes + Inngest → must be SSR (Fluid Compute).
+
+```bash
+# ✅ Correct
+vercel --prod
+
+# ❌ Wrong
+# vercel deploy ./out   ← no out/ directory
+# edgeone pages deploy .  ← wrong platform
+```
+
+## Post-Deploy Checklist
+
+- [ ] `GET /api/inngest` returns function list
+- [ ] `GET /api/me/billing-summary` returns account summary
+- [ ] `GET /api/billing/me?groupBy=month` returns billing detail
+- [ ] Inngest Cloud shows updated function list (`costGuardFn` removed)
+- [ ] Vercel Blob read/write works
+- [ ] Neon database connected
+- [ ] AI client (SiliconFlow) callable
+
+## Rollback
+
+```bash
+# List deployments
+vercel list
+
+# Rollback to specific deployment
+vercel rollback <deployment-id>
+```
+
+## Common Issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Build fails: env validation | Missing env var | `vercel env add <name>` + redeploy |
+| Inngest not triggering | Not synced | Manual sync in Inngest Cloud |
+| DB connection fails | Stale DATABASE_URL | Update env + redeploy |
+| Blob upload 403 | Invalid BLOB_READ_WRITE_TOKEN | Regenerate token |
+| AI call 401 | Invalid API key | Update env variable |
+| Old functions still active | Code not committed | `git status` + commit + redeploy |
 
 ## Resources
 
-### References
-- `references/edgeone-cli-reference.md` - Complete EdgeOne CLI command reference
-
-### Assets
-- `assets/ssg-cnb-template.yml` - CNB configuration template for SSG projects
-- `assets/ssr-cnb-template.yml` - CNB configuration template for SSR projects
+- [Vercel CLI Docs](https://vercel.com/docs/cli)
+- [Next.js Deployment Docs](https://nextjs.org/docs/app/building-your-application/deploying)
+- [Inngest Vercel Integration](https://inngest.com/docs/deploy/vercel)
+- [Vercel Blob](https://vercel.com/docs/storage/vercel-blob)
