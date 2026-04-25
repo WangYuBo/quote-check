@@ -11,12 +11,13 @@ import {
   SIMILARITY_PARTIAL_THRESHOLD,
   computeConfidence,
 } from '@/lib/ai/confidence';
-import { computeInternalCostFen, USER_PRICING_VERSION } from '@/lib/ai/cost';
+import { USER_PRICING_VERSION } from '@/lib/ai/cost';
 import { isModerationRejection } from '@/lib/ai/moderation';
 import { retrievePassagesForQuote } from '@/lib/ai/retrieval';
 import { PROMPT_VERSION, loadPromptRaw } from '@/lib/ai/prompts';
 import { buildResultIdempotencyKey } from '@/lib/idempotency';
 import { listUserReferences } from '@/lib/services/reference';
+import { recordApiCall } from '@/lib/billing/recorder';
 import {
   createReportSnapshot,
   getReport,
@@ -24,7 +25,6 @@ import {
   saveQuotes,
   saveReferenceHits,
   saveVerificationResult,
-  updateTaskCost,
   updateTaskProgress,
   updateTaskStatus,
 } from '@/lib/services/task';
@@ -158,10 +158,20 @@ export const proofreadRunFn = inngest.createFunction(
         .slice(0, 600);
 
       try {
-        const { text: probeOut } = await generateText({
+        const { text: probeOut, usage: probeUsage } = await generateText({
           model: defaultModel,
           maxTokens: 64,
           messages: [{ role: 'user', content: `请简要概括以下文段的主题（一句话）：\n${sampleText}` }],
+        });
+
+        // 记录 moderation_probe 阶段费用
+        await recordApiCall({
+          taskId,
+          userId,
+          modelId: MODEL_ID,
+          phase: 'moderation_probe',
+          promptTokens: probeUsage.promptTokens,
+          completionTokens: probeUsage.completionTokens,
         });
 
         // 签名 B：LLM 返回拒答模板
@@ -200,11 +210,15 @@ export const proofreadRunFn = inngest.createFunction(
         ],
       });
 
-      // 追踪 extract 阶段费用
-      await updateTaskCost(
-        ctx.taskId,
-        computeInternalCostFen(MODEL_ID, extractUsage.promptTokens, extractUsage.completionTokens),
-      );
+      // 记录 extract 阶段费用
+      await recordApiCall({
+        taskId: ctx.taskId,
+        userId: ctx.userId,
+        modelId: MODEL_ID,
+        phase: 'extract',
+        promptTokens: extractUsage.promptTokens,
+        completionTokens: extractUsage.completionTokens,
+      });
 
       // 提取 JSON（LLM 可能含 markdown 代码块）
       const jsonMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -331,11 +345,15 @@ export const proofreadRunFn = inngest.createFunction(
           ],
         });
 
-        // 追踪 verify 阶段费用
-        await updateTaskCost(
-          ctx.taskId,
-          computeInternalCostFen(MODEL_ID, verifyUsage.promptTokens, verifyUsage.completionTokens),
-        );
+        // 记录 verify 阶段费用
+        await recordApiCall({
+          taskId: ctx.taskId,
+          userId: ctx.userId,
+          modelId: MODEL_ID,
+          phase: 'verify',
+          promptTokens: verifyUsage.promptTokens,
+          completionTokens: verifyUsage.completionTokens,
+        });
 
         // 多策略 JSON 提取：① 代码块 ② 纯 JSON 起始位置 ③ 全文
         let verifyResult: z.infer<typeof VerifyOutputSchema> | null = null;
