@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import './globals.css';
 
 import AgreementModal from '@/components/AgreementModal';
+import NavBar from '@/components/NavBar';
 
 export const metadata: Metadata = {
   title: '引用核查 · 文史类书稿三维度比对',
@@ -13,6 +14,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-CN" data-skin="C" suppressHydrationWarning>
       <body className="min-h-screen antialiased">
+        <NavBar />
         {children}
         <AgreementModal />
       </body>
