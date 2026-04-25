@@ -1,6 +1,7 @@
 import { serve } from 'inngest/next';
 
 import { inngest } from '@/inngest/client';
+import { costGuardFn } from '@/inngest/functions/cost-guard';
 import { pingFn } from '@/inngest/functions/ping';
 import { proofreadRunFn } from '@/inngest/functions/proofread-run';
 import { env } from '@/lib/env';
@@ -17,6 +18,6 @@ import { env } from '@/lib/env';
  */
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [pingFn, proofreadRunFn],
+  functions: [pingFn, proofreadRunFn, costGuardFn],
   signingKey: env.INNGEST_SIGNING_KEY,
 });

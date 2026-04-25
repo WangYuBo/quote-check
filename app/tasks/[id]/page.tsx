@@ -1,6 +1,6 @@
 'use client';
 
-import { ShieldOff } from 'lucide-react';
+import { PauseCircle, ShieldOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { use, useEffect, useState } from 'react';
 
@@ -46,7 +46,12 @@ export default function TaskPage({ params }: { params: Promise<{ id: string }> }
             router.push(`/reports/${id}`);
             return;
           }
-          if (data.status === 'CANCELED' || data.status === 'REJECTED_BY_MODERATION') {
+          if (
+            data.status === 'CANCELED' ||
+            data.status === 'REJECTED_BY_MODERATION' ||
+            data.status === 'PAUSED_COST' ||
+            data.status === 'FAILED'
+          ) {
             return;
           }
         } catch {
@@ -91,6 +96,18 @@ export default function TaskPage({ params }: { params: Promise<{ id: string }> }
                   {task.totalQuotes !== null
                     ? `${task.verifiedQuotes} / ${task.totalQuotes} 条引文`
                     : '正在提取引文…'}
+                </p>
+              </div>
+            )}
+
+            {task.status === 'PAUSED_COST' && (
+              <div className="border border-amber-200 bg-amber-50 rounded-xl px-4 py-4 space-y-2">
+                <div className="flex items-center gap-2 text-amber-700">
+                  <PauseCircle size={18} />
+                  <span className="text-sm font-medium">已暂停（费用超出预估 1.5 倍）</span>
+                </div>
+                <p className="text-xs text-amber-600">
+                  如需继续，请联系支持重新发起任务。已完成的引文核查结果已保存。
                 </p>
               </div>
             )}

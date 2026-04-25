@@ -46,6 +46,20 @@ export type AppEventMap = {
       requestedAt: string;
     };
   };
+
+  /**
+   * 费用守卫检查（MAS-4 · MS-D-04）
+   *
+   * 每校对一条引文后由 proofread-run 发出，cost-guard 函数检查累计费用是否越限。
+   * 越限时将任务置为 PAUSED_COST，proofread-run 下次 step 会检测到并退出。
+   */
+  'task/cost.check': {
+    data: {
+      taskId: string;
+      /** 本次累计实际费用（分） */
+      costActualFen: number;
+    };
+  };
 };
 
 export type AppEventName = keyof AppEventMap;
