@@ -21,8 +21,10 @@ export async function GET(req: NextRequest) {
 
   const sp = req.nextUrl.searchParams;
   const op = sp.get('op') ?? undefined;
-  const from = sp.get('from') ? new Date(sp.get('from')!) : undefined;
-  const to = sp.get('to') ? new Date(sp.get('to')!) : undefined;
+  const fromStr = sp.get('from');
+  const toStr = sp.get('to');
+  const from = fromStr ? new Date(fromStr) : undefined;
+  const to = toStr ? new Date(toStr) : undefined;
   const limit = Math.min(Number(sp.get('limit') ?? '50'), 200);
 
   const conditions = [eq(auditLog.userId, session.user.id)];
