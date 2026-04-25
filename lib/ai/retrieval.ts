@@ -19,7 +19,7 @@ export async function retrievePassagesForQuote({
   quoteText,
   referenceIds,
   topK = 3,
-  minSimilarity = 0.3,
+  minSimilarity = 0.1,
 }: {
   quoteText: string;
   referenceIds: string[];

@@ -386,8 +386,6 @@ export const ErrorCode = {
   NOT_FOUND: 'NOT_FOUND',
   RATE_LIMITED: 'RATE_LIMITED',
   REJECTED_BY_MODERATION: 'REJECTED_BY_MODERATION',  // notes #1
-  COST_EXCEEDED: 'COST_EXCEEDED',                    // real.md #6
-  COST_PAUSED: 'COST_PAUSED',
   FROZEN_MUTATION: 'FROZEN_MUTATION',                // real.md #7
   LLM_TIMEOUT: 'LLM_TIMEOUT',
   LLM_MALFORMED: 'LLM_MALFORMED',
@@ -477,7 +475,6 @@ export function idempotencyKey(taskId: string, quoteId: string, attemptN: number
 ```typescript
 export type Events = {
   'task/proofread.requested': { data: { taskId: string; userId: string } };
-  'task/proofread.paused': { data: { taskId: string; reason: 'COST_EXCEEDED' } };
   'task/ttl.destroy': { data: { taskId: string } };
 };
 ```
@@ -588,6 +585,73 @@ export function isModerationRejection(err: unknown): boolean {
 - 审核拒绝 **必须**生成独立的 `VerificationResult` 行（`moderationStatus = 'REJECTED_BY_MODERATION'`，三维度字段为 null）
 - 不得伪造成"通过"（notes #1 事故源）
 - UI 必须以独立视觉皮肤呈现（UI 规约 ModerationRejectedSkin）
+
+---
+
+### 8.5 计费模块（SS-9 · 双轨制）
+
+用户结算与内部成本监控分离，详见架构规约 SS-9 + ADR-018。
+
+#### 8.5.1 文件结构
+
+```
+lib/billing/
+├── pricing.ts          # 费率常量 + 内部 token 成本计算
+├── user-pricing.ts     # 用户字数结算（computeUserCostFen）
+├── recorder.ts         # api_call 内部记录（仅成本监控，非用户结算）
+├── aggregator.ts       # 计费聚合（读 task.cost_actual_fen）
+└── types.ts            # Fen brand type
+
+lib/ai/
+└── cost.ts             # 后向兼容 re-export（v1.1 移除）
+```
+
+#### 8.5.2 双轨公式
+
+| 用途 | 公式 | 数据源 | 文件 |
+|------|------|--------|------|
+| **用户结算（A23）** | `ceil(charCount / 1000) × 300 fen` | `manuscript.char_count` | `user-pricing.ts` |
+| **内部成本监控** | token 费率公式（¥0.002/¥0.003 per 1K tokens） | `api_call` 表 | `pricing.ts` → `recorder.ts` |
+
+#### 8.5.3 用户结算（`lib/billing/user-pricing.ts`）
+
+```typescript
+import { USER_PRICE_FEN_PER_K_CHAR } from '@/lib/billing/pricing';
+
+export function computeUserCostFen(charCount: number): number {
+  return Math.ceil(charCount / 1000) * USER_PRICE_FEN_PER_K_CHAR;
+}
+```
+
+费用精确固定（errorMarginPct = 0），运行中不追加。
+
+#### 8.5.4 内部成本监控（`lib/billing/pricing.ts` + `recorder.ts`）
+
+- `computeInternalCostFen(modelId, promptTokens, completionTokens)` — token 费率公式
+- `recordApiCall(opts)` — 记录单次 LLM 调用，原子写入 `api_call` + 累加 `task.cost_actual_fen`
+- 写入 `api_call.pricingVersion` = `INTERNAL_PRICING_VERSION`
+- 费用仅用于运营方成本参考，**不作用户结算数据源**
+
+#### 8.5.5 费用预估（`lib/billing/pricing.ts`）
+
+```typescript
+export function estimateCostFen(charCount: number): {
+  quoteCountEstimate: number;
+  estimatedFen: number;
+  errorMarginPct: number;
+} {
+  const estimatedFen = Math.ceil(charCount / 1000) * USER_PRICE_FEN_PER_K_CHAR;
+  return { quoteCountEstimate: Math.ceil(charCount / 1000), estimatedFen, errorMarginPct: 0 };
+}
+```
+
+#### 8.5.6 硬约束
+
+- **R1**：用户结算**必须**走字数公式，不得引用 `api_call` 聚合（见 A23）
+- **R2**：`api_call` 写入保留但仅限内部成本监控，`cost_fen` 注释标注"非用户结算"
+- **R3**：费率版本化 — `USER_PRICING_VERSION` 和 `INTERNAL_PRICING_VERSION` 独立管理
+- **R4**：无 cost-guard — 用户费用固定，运行中不暂停（MS-D-04 已关闭）
+- **R5**：版本戳记录 `userPricingVersion`（报告快照 `versionStampJson` 字段）
 
 ---
 
@@ -1262,7 +1326,7 @@ PR 合入 `main` 前必过：
 | real.md #2（证据链 + 置信度客观） | §14.1-14.3 confidence 单一出口 + no-confidence-selfeval | ESLint + 单测 |
 | real.md #3（保密 + TTL） | §13 日志脱敏 + §7 Inngest ttl-destroy + §19 env.TTL_DAYS | Pino redact + 定时任务 |
 | real.md #4（异文 ≠ 错误） | §15.3 VARIANT 视觉独立 + UI §7.12 VariantHighlight | 组件约束 + E2E |
-| real.md #6（成本二确） | §19 env.COST_CAP_CNY + ErrorCode.COST_EXCEEDED | 业务 Service + Inngest |
+| real.md #6（字数固定计费 + 二次确认） | §7.5 字数公式 + §19 env.COST_CAP_CNY | 业务 Service |
 | real.md #7（版本锁定） | §5.2 冻结字段 + §10 prompt SHA256 + no-frozen-field-update | PG 触发器 + ESLint |
 | notes #1（审核拒绝） | §8.4 isModerationRejection + ErrorCode.REJECTED_BY_MODERATION | AI SDK 封装 |
 | notes #2（日志脱敏） | §13 Pino redact + no-raw-text-log | ESLint + Pino 配置 |

@@ -1,7 +1,7 @@
 ---
 name: spec-product-requirements
 description: 文史类引用校对软件 v1.0 的 affordance 驱动产品规约（MAS 故事骨架）
-version: v1.0.0-draft
+version: v1.0.2-draft
 generated_by: pm-product-requirements skill (v3.0 Affordance-Driven)
 depends_on:
   - .42cog/meta/meta.md
@@ -13,7 +13,9 @@ stakeholders:
   - 出版社质检编辑 / 文史类编辑（B 端主力付费）
   - 作者 / 研究生 / 自出版学者（C 端种子）
   - 项目内部 AI 编排引擎
-last_updated: 2026-04-18
+last_updated: 2026-04-25
+supersedes: v1.0.1-draft
+change_summary: "结算模型从按 token 计费改为按字数计费（¥3/千字，仅书稿字数），对应 MAS-4 / A03 / A23 重写"
 ---
 
 # 文史类引用校对软件 — 产品规约（Product Requirements）
@@ -81,6 +83,8 @@ last_updated: 2026-04-18
 | A10 | 报告版本冻结 | MAS-5 |
 | A11 | 历史报告列表 | MAS-5 |
 | A12 | 导出（含版本戳） | MAS-1 / MAS-5 |
+| A22 | 用户主页（登录后项目空间） | MAS-1 / MAS-5 |
+| A23 | 按字数结算明细（¥3/千字） | MAS-4 |
 
 ---
 
@@ -254,28 +258,43 @@ API_ERROR         # 网络/其他 API 错误
 
 ### 2.4 MAS-4：成本透明可停（商业安全）
 
-**Story Theme**：费用可预估、运行中可追踪、越界可自动暂停。
+**Story Theme**：费用可预估、运行中可追踪、越界可自动暂停、事后按字数结算。
 
 **Core Affordance Sequence**：
 
-1. **上传后预估** → perceive：
-   - 引文数粗估（基于书稿长度 + 密度估算）
-   - 预估公式展示：`预估条数 × 每条 token × 费率`
-   - 预估金额 + 误差区间（如 `¥16.40 ± 20%`）
+1. **上传后预估**（A03）→ perceive：
+   - 书稿字数直接从服务端读取（`manuscript.charCount`）
+   - 预估公式展示：`ceil(书稿字数 / 1000) × ¥3`
+   - 预估金额（如 `书稿 5.2 千字 × ¥3/千字 = ¥15.60`）
 2. **阈值二次确认** → perceive：预估 > 默认 ¥50 → 阻塞式对话框 "本次预计 ¥XX，确认继续？"
-3. **运行中累计费用推送** → perceive：SSE 事件携带 `cost_so_far` 字段，UI 显示当前已花费
-4. **越界自动暂停** → perceive：累计 > 预估 × 1.5 → 系统**暂停而非终止**任务；显示"已花费 ¥YY，超出预估 1.5 倍，是否继续？【继续 / 停止】"
-5. **费用透明报表** → perceive：任务结束后生成成本明细（按引文数 × 模型 tokens）
+3. **运行中累计费用推送** → perceive：SSE 事件携带 `cost_so_far_fen` 字段（内部 token 消耗实时折算），UI 显示当前已花费
+4. **越界自动暂停** → perceive：内部 token 消耗折算费用 > 预估 × 1.5 → 系统**暂停而非终止**任务；显示"已花费 ¥YY，超出预估 1.5 倍，是否继续？【继续 / 停止】"
+5. **费用透明报表（A23 实算）** → perceive：任务结束后显示结算明细（书稿字数 × ¥3/千字 = 合计）；账户级在用户主页（A22）汇总月度账单
 
-**Meaning Closure**：按量计费的暴击被制度性拦截。real.md #6。
+**Meaning Closure**：按字数计费，清晰可预期。real.md #6。
 
 **默认阈值**（可在用户设置中修改）：
 - 单任务预估硬上限：¥50 → 触发二次确认
 - 运行时超预估比例：1.5x → 触发暂停
 
+**用户结算价目表**（v1.0 锁定，与 A10 版本戳同步快照）：
+
+| 计价项目 | 单价 | 说明 |
+|---------|------|------|
+| 书稿字数 | **¥3 / 千字** | 仅计书稿正文字数（`manuscript.charCount`），不含参考文献 |
+
+**实算公式**（A23 详述）：
+
+```
+用户费用（分） = ceil(manuscript.charCount / 1000) × 300
+```
+
+> **金额精度**：货币最小单位为「分」（`fen` = 1/100 元），全链路 `int` 存储；展示时再格式化为 `¥X.XX`。
+> **费率版本化**：费率必须以代码常量隔离（`lib/billing/pricing.ts`），值变更时升版（如 `pricing-v1.1`）并写入 A10 版本戳——历史任务永远以**当时**的费率呈现，不被新费率追溯重算。
+
 **Intrinsic Motivation**：
-- **Mastery**：长期使用后用户对"自己书稿的成本区间"形成预期
-- **Autonomy**：每一笔钱花在哪一条引文上，可审可查
+- **Mastery**：用户清楚知道"我的书稿要花多少钱"——字数决定费用，无不确定性
+- **Autonomy**：费用透明，每一笔按字数可复核
 
 **Story Dependencies**：
 - Requires：MAS-1
@@ -309,7 +328,7 @@ API_ERROR         # 网络/其他 API 错误
      "source_refs_hash": "sha256:jkl..."
    }
    ```
-2. **进入历史列表** → perceive：用户历史报告列表，每条含生成时间 + 版本戳缩写
+2. **进入历史列表** → perceive：登录后默认进入用户主页（A22），其中"已完成报告"标签页即历史报告列表（A11）——每条含生成时间 + 版本戳缩写 + 实际费用（A23）
 3. **禁止重跑覆盖** → perceive（系统约束）：界面上无"用新模型重跑此报告"按钮；若用户想升级，必须**主动发起新任务**——新旧报告并存
 4. **导出文件含版本戳** → perceive：Word 页眉 + CSV 文件头包含 `model=DeepSeek-V3.2 | prompts=abc/def/ghi | generated=2026-04-18`
 
@@ -522,20 +541,20 @@ API_ERROR         # 网络/其他 API 错误
 
 | 属性 | 值 | 可感知者 |
 |------|---|---------|
-| 视觉线索 | 上传完成后显示"预估费用"卡片（粗估条数 × 费率）+ 阈值超限时的阻塞式对话框 | 人类 |
-| 语义标记 | 预估 API `GET /api/estimate/{task_id}` 返回 `{estimated_cost, quote_count_estimate, threshold_exceeded}` | 双 |
+| 视觉线索 | 上传完成后显示"预估费用"卡片（书稿字数 × ¥3/千字）+ 阈值超限时的阻塞式对话框 | 人类 |
+| 语义标记 | 预估 API `GET /api/estimate/{task_id}` 返回 `{estimated_fen, char_count, threshold_exceeded}` | 双 |
 | 交互模式 | 查看 → 确认 → 发起 | 人类 |
 
 **Perception-Action Coupling**:
 
 | 阶段 | 人类 | 系统内部 |
 |------|------|---------|
-| See | "预估 ¥16 ± 20%（约 500 条引文）" | — |
+| See | "预估 ¥15.60（书稿 5.2 千字 × ¥3/千字）" | — |
 | Do | 点击"开始校对" | 校验 threshold → 如超限则返回确认要求 |
 | Feedback | 若超限 → 弹出二次确认对话框；否则进入 A04 | 记录用户确认事件 |
 
 **Constraints**:
-- 预估算法：基于书稿字数 + 引用特征密度（如书名号 + 引号计数）
+- 预估算法：`ceil(manuscript.charCount / 1000) × 300`（分），精确无误差
 - 默认阈值 ¥50，用户可在设置修改（real.md #6）
 - **不允许跳过二次确认**（硬约束）
 
@@ -547,10 +566,10 @@ API_ERROR         # 网络/其他 API 错误
 
 | ID | 标准 | 人类测试 | 系统内部验证 |
 |----|------|---------|-------------|
-| A03-1 | 预估可见 | 上传后 2 秒内显示预估卡片 | API 返回估算对象 |
+| A03-1 | 预估可见 | 上传后 2 秒内显示预估卡片（书稿字数 × 单价） | API 返回 `{ estimated_fen, char_count }` |
 | A03-2 | 阈值触发确认 | 预估 ¥100 时，点击"开始"出现确认对话框 | 后端拒绝无确认的请求 |
 | A03-3 | 低于阈值直接通过 | 预估 ¥5 时，点击"开始"直接进入校对 | API 不强制 confirm 字段 |
-| A03-4 | 误差范围披露 | 卡片文字含"± X%" | 返回字段 `estimate_uncertainty` |
+| A03-4 | 字数精确无误差 | 预估金额与最终结算一致（字数不变） | `estimated_fen = ceil(charCount/1000) × 300` |
 
 ---
 
@@ -973,6 +992,120 @@ def is_moderation_rejection(response) -> bool:
 
 ---
 
+### A22：用户主页（登录后项目空间）
+
+**Level**: Primary
+**Action Enabled**: 用户登录后默认落地的项目空间——一处看见自己**全部**核校项目（草稿 / 进行中 / 已完成 / 失败 / 拒绝），并提供"新建核校"主入口与账户用量摘要
+**MVP 状态**: ❌ 全新（v1.0 新建。当前登录后无统一项目入口，已有 A11 仅覆盖"已完成历史报告"子集）
+
+**与 A11 的边界**：
+- **A11 历史报告列表**：聚焦**已完成且已冻结**的报告，是 A22 内部的一个"标签页 / 子视图"
+- **A22 用户主页**：覆盖任务全生命周期（含上传中、校对中、暂停、失败、拒绝），是登录后的**入口环境**
+- 关系：A22 ⊃ A11（A11 是 A22 的子视图，二者不重复定义"权限隔离"等共有约束）
+
+**Environmental Properties**:
+
+| 属性 | 值 | 可感知者 |
+|------|---|---------|
+| 视觉线索 | 顶部欢迎语 + 账户摘要带（本月已用 ¥X.XX / 累计 ¥Y.YY）+ "新建核校"主按钮（醒目）+ 项目卡片网格/表格切换 | 人类 |
+| 项目卡片要素 | 书稿名 + 状态徽标（草稿/进行中/已完成/暂停/失败/拒绝）+ 创建时间 + 引文条数 + 实算费用（A23）+ "查看 / 继续 / 删除"按钮 | 人类 |
+| 语义标记 | `GET /api/projects?status=*&from=*&to=*&page=*` 返回任务列表；`GET /api/me/billing-summary` 返回账户摘要 | 双 |
+| 交互模式 | 列表 / 卡片切换 + 状态筛选 + 时间区间筛选 + 关键字搜索（书稿名）+ 分页 | 人类 |
+
+**Perception-Action Coupling**:
+
+| 阶段 | 人类 | 系统内部 |
+|------|------|---------|
+| See | 登录跳转后立刻看到"我的项目空间" + 账户摘要 + 项目卡片 | `auth` middleware 校验 → `GET /api/projects` |
+| Do | 点击"新建核校"→ 进入 A01 上传流；或点击某项目卡片 → 进入对应阶段视图（进度页 / 报告页 / 重试入口） | 路由跳转 + 状态加载 |
+| Feedback | 主页随任务状态实时更新（任务结束自动刷新该卡片状态） | 任务事件总线 → 主页 SSE 或轮询 |
+
+**Constraints**（hard constraints）：
+
+- **权限隔离**：仅显示当前登录用户名下任务（后端 SQL 强制 `WHERE user_id = :session_user_id`）
+- **生命周期完整性**：任务全状态可见（不只是 COMPLETED）；草稿/失败/拒绝/暂停均不被隐藏，便于用户感知"系统当前为我做了哪些事"
+- **原文销毁不影响项目可见性**：MAS-6 销毁原始书稿后，项目卡片仍存在（指向脱敏后的报告或"已删除"占位）
+- **登录后默认路由**：`/` 重定向到 `/dashboard`（或同等用户主页路径），而非保持空白首页或上传页
+- **不展示综合评分**：项目卡片不允许显示"通过率""得分"等单一数值（沿用 N03）
+
+**Dependencies**:
+- Requires：登录 / 认证体系（已落地：`feat(auth)` commit `11e0f96`）+ A04（任务持久化）
+- Enables：A11（作为子视图）+ A23（账户级账单聚合在主页摘要带可见）
+
+**Acceptance Criteria**:
+
+| ID | 标准 | 人类测试 | 系统内部验证 |
+|----|------|---------|-------------|
+| A22-1 | 登录默认落地 | 登录成功后浏览器地址栏为用户主页路径 | E2E：登录→断言 URL |
+| A22-2 | 全状态可见 | 构造每种状态各一条任务 → 主页全部显示 | API 返回数组覆盖所有 status 枚举 |
+| A22-3 | 权限隔离 | 用户 A 看不到用户 B 的任意项目 | 后端 SQL 含 user_id 条件；E2E 跨账号断言 |
+| A22-4 | 账户摘要可见 | 顶部带显示"本月已用 ¥X.XX / 累计 ¥Y.YY" | API `/me/billing-summary` 返回值校验 |
+| A22-5 | 状态筛选可用 | 点击"进行中"标签 → 仅显示进行中任务 | 前端 query 参数生效 |
+| A22-6 | "新建核校"主按钮显著 | 主页顶部一眼可见 | DOM 主操作按钮唯一 |
+| A22-7 | 卡片实时反映状态 | 任务从"校对中"完成 → 主页该卡片自动变"已完成" | SSE / 轮询机制存在 |
+| A22-8 | 无综合评分 | 项目卡片不出现"得分""通过率"字样 | 自动化 grep CI |
+
+---
+
+### A23：按字数结算明细（¥3/千字）
+
+**Level**: Primary
+**Action Enabled**: 任务级和账户级按书稿字数计算结算费用（字数 × ¥3/千字），费率以版本化常量管理
+**MVP 状态**: ❌ 全新
+
+**用户结算单价**（v1.0，详见 MAS-4 §2.4）：
+
+| 计价项目 | 单价 | 说明 |
+|---------|------|------|
+| 书稿字数 | **¥3 / 千字** | 仅计书稿正文字数（`manuscript.charCount`），不含参考文献 |
+
+**与 A03 的边界**：
+- **A03 费用预估**：任务前展示——`ceil(字数/1000) × ¥3`，与最终结算使用相同公式
+- **A23 结算明细**：任务中 / 任务后 / 账户级**实算**——仍然是 `ceil(字数/1000) × ¥3`（字数不变则金额不变），但通过版本戳锁定当时的费率，确保历史不被追溯重算
+- 二者共享 MAS-4
+
+**Environmental Properties**:
+
+| 属性 | 值 | 可感知者 |
+|------|---|---------|
+| 视觉线索（任务级） | 报告底部"结算"行：书稿字数 N · 单价 ¥3/千字 · 合计 ¥X.XX | 人类 |
+| 视觉线索（账户级） | 用户主页（A22）顶部摘要带 + 单独"账单"页：本月合计、累计合计、按月份汇总、"导出 CSV 账单"按钮 | 人类 |
+| 语义标记 | `GET /api/billing/me?from=YYYY-MM-DD&to=YYYY-MM-DD` 返回账户级聚合 | 双 |
+| 交互模式 | 阅览 + 导出 | 人类 |
+
+**Perception-Action Coupling**:
+
+| 阶段 | 人类 | 系统内部 |
+|------|------|---------|
+| See | 报告底部结算行 / 主页摘要 | `ceil(charCount / 1000) × 300`（分） |
+| Do | 点击"导出账单 CSV" | 后端聚合 → CSV 流响应 |
+| Feedback | 下载文件含逐任务行 + 月度汇总行 | — |
+
+**Constraints**（hard constraints）：
+
+- **金额精度**：货币最小单位为「分」（`fen` = 1/100 元），全链路 `int` 存储；展示层格式化为 `¥X.XX`。**禁止**用 `float / decimal` 在内层流转
+- **费率代码隔离**：¥3/千字 必须为常量（`lib/billing/pricing.ts`），不得硬编码数字
+- **费率版本化**：费率升版时发版常量（如 `pricing-v1.1`），并在 A10 报告版本戳记录——历史任务永远以**当时**的费率呈现
+
+**Dependencies**:
+- Requires：A04（任务持久化）+ A10（版本戳）
+- Enables：A22（账户摘要带）+ MAS-4 全链路结算
+
+**Acceptance Criteria**:
+
+| ID | 标准 | 人类测试 | 系统内部验证 |
+|----|------|---------|-------------|
+| A23-1 | 任务费用按字数计算 | 任意已完成任务 → 费用 = `ceil(字数/1000) × ¥3` | SQL 比对 `task.cost_actual_fen` 与公式 |
+| A23-2 | 结算行展示完整 | 报告底部显示"字数 N · 单价 ¥3/千字 · 合计 ¥X.XX" | API 返回 `{ charCount, rateFen, totalFen }` |
+| A23-3 | 账户月度聚合 | 用户主页摘要 = SUM(本月任务 `cost_actual_fen`) | 后端 SQL 校验 |
+| A23-4 | 费率常量隔离 | grep 业务代码无 `300`（分/千字费率）字面量 | 自动化 grep CI |
+| A23-5 | 费率纳入版本戳 | 报告 `version_snapshot.pricing_version` 字段存在 | API 字段校验 |
+| A23-6 | 历史费率不被追溯重算 | 模拟改 `pricing-v1.1` → 旧任务费用值不变 | 单元测试 |
+| A23-7 | 金额单位为分 | API / DB 字段命名以 `_fen` 结尾，类型 `int` | 类型检查 + 命名规约 |
+| A23-8 | 账单可导出 CSV | 用户点击导出 → 下载 UTF-8 BOM CSV（列：任务ID、字数、单价、合计） | E2E |
+
+---
+
 ### 3.13 Secondary / Latent Affordances（简表）
 
 | ID | Affordance | Level | 说明 | MVP 状态 |
@@ -1012,8 +1145,9 @@ def is_moderation_rejection(response) -> bool:
 | 段落 | `paragraphs(id, manuscript_id, idx, text_hash, chapter, ...)` | A05 A06 内部 |
 | 引文 | `quotes(id, paragraph_id, quote_text_hash, source_work, location_hint, ...)` | A06 A07 A08 |
 | 参考文献 | `references(id, user_id, canonical_name, version_role, stored_path, filename_hashed, ...)` | A02 A07 |
-| 校对任务 | `tasks(id, manuscript_id, status, cost_so_far, frozen_at, ...)` | A04 A05 A10 |
+| 校对任务 | `tasks(id, manuscript_id, user_id, status, cost_estimate_fen, cost_actual_fen, frozen_at, ...)` | A04 A05 A10 A22 |
 | 校对结果 | `verifications(id, task_id, quote_id, reference_id, verdict_*, confidence, confidence_components, status_enum, ...)` | A06 A07 A08 A09 |
+| **API 调用账目** | `api_calls(id, task_id, model_id, prompt_tokens, completion_tokens, cost_fen, called_at, pricing_version)` | 内部成本监控（cost-guard） |
 
 **关键关系**（来自 cog.md）:
 - 用户 1:N 书稿 1:N 校对任务 1:N 校对结果
@@ -1136,6 +1270,8 @@ cancelled
 | A10 版本冻结 | 4 | §3.10 |
 | A11 历史列表 | 4 | §3.11 |
 | A12 导出 | 4 | §3.12 |
+| A22 用户主页 | 8 | §3.A22 |
+| A23 按字数结算 | 8 | §3.A23 |
 
 ---
 
@@ -1174,8 +1310,10 @@ cancelled
 | A08 | `ModerationChip` | 醒目独立颜色 |
 | A09 | `ConfidenceBar` + `ConfidenceTooltip` | 悬停显示 4 分项 |
 | A10 | `VersionStampBanner` | 报告顶部固定 |
-| A11 | `ReportListTable` | 筛选 + 分页 |
+| A11 | `ReportListTable` | 筛选 + 分页（嵌入 A22 作为标签页） |
 | A12 | `ExportMenu` | Word / CSV 按钮 |
+| **A22** | `DashboardPage` + `ProjectCard` + `BillingSummaryBar` | 登录后默认路由；卡片实时反映任务状态；含账户摘要带 |
+| **A23** | `BillingRow`（任务结算行）+ `BillingPage`（账户级）+ `BillingExportButton` | 金额按字数公式计算，`_fen` 存储，展示层格式化 |
 
 ### 9.2 后端 affordance 支撑
 
@@ -1191,6 +1329,8 @@ cancelled
 | **拒绝检测** | 模型响应拒绝识别 | ❌ 全新 |
 | **版本冻结** | Hash prompt + 冻结版本戳 | ❌ 全新 |
 | **数据保密** | TTL 销毁 + 日志脱敏 | ⚠️ TTL 需增强；日志脱敏全新 |
+| **计费服务** | 费率常量（¥3/千字）、任务费用按字数计算、账户月度聚合（A23）| ❌ 全新（`lib/billing/pricing.ts` + `BillingService`） |
+| **用户主页**（dashboard）| 项目空间路由、状态聚合、账户摘要带（A22）| ❌ 全新（`app/dashboard/page.tsx`） |
 
 ### 9.3 基础设施
 

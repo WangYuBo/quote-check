@@ -24,7 +24,7 @@ created: 2026-04-18
 ## 0. 读法
 
 - **上游**：`cog.md`（7 实体 + 关系矩阵）+ `real.md`（7 约束）+ `spec-system-architecture.md`（§4 子系统、§8 ADR-003/006/011/012/013）
-- **本规约**：把 7 核心实体 + 4 辅助表 + 3 Better Auth 表 落为 **可直接 copy 的 Drizzle schema** + **独立 SQL 触发器迁移** + **Zod 校验层**
+- **本规约**：把 7 核心实体 + 5 辅助表 + 3 Better Auth 表 落为 **可直接 copy 的 Drizzle schema** + **独立 SQL 触发器迁移** + **Zod 校验层**
 - **下游**：`dev-coding` 起脚手架后，把 §4.1 代码整段放入 `lib/db/schema.ts`；把 §5 SQL 放入 `lib/db/migrations/0001_triggers.sql`
 - **与架构规约的分工**：架构规约决定 *有哪些表 / 如何冻结版本*（ADR 级），本规约决定 *每个列的类型 / 索引 / 触发器 SQL*（可执行级）
 
@@ -41,7 +41,7 @@ created: 2026-04-18
 
 ---
 
-## 2. ER 图（7 核心 + 4 辅助 + 3 Better Auth）
+## 2. ER 图（7 核心 + 5 辅助 + 3 Better Auth）
 
 ```
                                  ┌──────────────────┐
@@ -176,7 +176,7 @@ updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(
  *
  * Drizzle schema for quote-check v1.0
  * - 7 核心实体（cog.md）
- * - 4 辅助表（result_reference_hit / report_snapshot / audit_log / user_agreement_acceptance）
+ * - 5 辅助表（result_reference_hit / report_snapshot / audit_log / user_agreement_acceptance / api_call）
  * - 3 Better Auth 表（session / account / verification）
  * - 1 版本登记表（prompt_version，ADR-012）
  *
@@ -527,6 +527,7 @@ export const task = pgTable(
       promptVersions: { extract: string; verify: string; map: string }; // SHA256
       sourceRefsHash: string;           // 所有 reference.content_hash 连接后 SHA256
       confidenceAlgoVersion: string;    // "v1.0"
+      userPricingVersion: string;       // 用户结算费率版本（¥3/千字），与内部 token 费率分离
       frozenAt: string;                 // ISO
     }>(),
     versionStampFrozenAt: timestamp('version_stamp_frozen_at', { withTimezone: true }),
@@ -659,6 +660,7 @@ export const reportSnapshot = pgTable(
       promptVersions: { extract: string; verify: string; map: string };
       sourceRefsHash: string;
       confidenceAlgoVersion: string;
+      userPricingVersion: string;          // 用户结算费率版本
     }>().notNull(),
     // 冻结时所有 result 的聚合数据（离线生成 Word/CSV 用）
     resultsAggregate: jsonb('results_aggregate').$type<{
@@ -720,6 +722,27 @@ export const userAgreementAcceptance = pgTable(
   (t) => ({
     userVersionUniq: uniqueIndex('uniq_agreement_user_version').on(t.userId, t.agreementVersion),
     userIdx: index('idx_agreement_user').on(t.userId, t.acceptedAt),
+  }),
+);
+
+/* 内部成本监控（SS-9，非用户结算——用户结算走字数公式） */
+export const apiCall = pgTable(
+  'api_call',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    taskId: uuid('task_id').notNull().references(() => task.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull().references(() => user.id),  // 冗余，避免账户聚合需 join
+    modelId: text('model_id').notNull(),                          // e.g. 'deepseek-ai/DeepSeek-V3.2'
+    pricingVersion: text('pricing_version').notNull(),            // 内部 token 费率版本
+    promptTokens: integer('prompt_tokens').notNull(),
+    completionTokens: integer('completion_tokens').notNull(),
+    costFen: integer('cost_fen').notNull(),                       // 内部成本（分），仅 cost-guard 用，非用户结算
+    phase: text('phase').notNull(),                               // 'extract' | 'verify' | 'moderation_probe' | 'map'
+    calledAt: timestamp('called_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byTask: index('idx_api_call_task').on(t.taskId, t.calledAt),
+    byUserMonth: index('idx_api_call_user_month').on(t.userId, t.calledAt),
   }),
 );
 
@@ -810,6 +833,11 @@ export const resultReferenceHitRelations = relations(resultReferenceHit, ({ one 
 export const reportSnapshotRelations = relations(reportSnapshot, ({ one }) => ({
   task: one(task, { fields: [reportSnapshot.taskId], references: [task.id] }),
 }));
+
+export const apiCallRelations = relations(apiCall, ({ one }) => ({
+  task: one(task, { fields: [apiCall.taskId], references: [task.id] }),
+  user: one(user, { fields: [apiCall.userId], references: [user.id] }),
+}));
 ```
 
 ### 4.2 类型导出（lib/db/types.ts）
@@ -829,6 +857,7 @@ import {
   auditLog,
   userAgreementAcceptance,
   promptVersion,
+  apiCall,
 } from './schema';
 
 export type User = InferSelectModel<typeof user>;
@@ -866,6 +895,9 @@ export type NewUserAgreementAcceptance = InferInsertModel<typeof userAgreementAc
 
 export type PromptVersion = InferSelectModel<typeof promptVersion>;
 export type NewPromptVersion = InferInsertModel<typeof promptVersion>;
+
+export type ApiCall = InferSelectModel<typeof apiCall>;
+export type NewApiCall = InferInsertModel<typeof apiCall>;
 ```
 
 ### 4.3 关键设计决策（补架构规约未细化部分）
@@ -1705,8 +1737,9 @@ main().catch((e) => {
 | 参考文献 | `reference` | canonicalName, role, versionLabel, contentHash | `reference_role_enum` (CANON/ANNOTATED/TRANSLATED/TOOL) | `display_id`（slug-hash8） |
 | 校对任务 | `task` | status, costCeilingCents, ttlExpiresAt, versionStamp | `task_status_enum` (9 状态) | `display_id`（与 manuscript 一对一） |
 | 校对结果 | `verification_result` | 三 verdict jsonb + confidence + matchStatus | 三 verdict 枚举 + `match_status_enum` | `idempotency_key` unique |
+| 内部成本监控 | `api_call` | taskId, userId, modelId, pricingVersion, costFen, phase, calledAt | （仅 cost-guard 用，非用户结算） | uuid PK |
 
-**7/7 覆盖 ✓**
+**7/7 核心 + 1 辅助表 ✓**
 
 ---
 

@@ -23,14 +23,6 @@ export const proofreadRequestedEvent = eventType('task/proofread.requested', {
   }>(),
 });
 
-export const costCheckEvent = eventType('task/cost.check', {
-  schema: staticSchema<{
-    taskId: string;
-    costActualFen: number;
-  }>(),
-});
-
 export type AppEventName =
   | typeof pingEvent.name
-  | typeof proofreadRequestedEvent.name
-  | typeof costCheckEvent.name;
+  | typeof proofreadRequestedEvent.name;

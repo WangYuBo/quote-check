@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 
 export default function NavBar() {
   const router = useRouter();
+  const pathname = usePathname();
   const [session, setSession] = useState<{ user: { email: string } } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -20,7 +21,7 @@ export default function NavBar() {
         setSession(null);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [pathname]);
 
   async function handleSignOut() {
     await fetch('/api/auth/sign-out', { method: 'POST' });

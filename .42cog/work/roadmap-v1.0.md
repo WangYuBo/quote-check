@@ -39,7 +39,7 @@ v1.0-m3 上线前闭环  ███████████░░░░░  70%  
 
 **MAS-3 拒绝显式达成（2026-04-25）**：moderation-gate 步骤从骨架（直接通过）升级为真实 probe call——取书稿前 3 段（≤600 字）发 LLM，签名 A（HTTP 非 2xx + content_filter 标记）和签名 B（2xx 但 isModerationRejection 检测拒答模板）双覆盖；拒绝时 task.status=REJECTED_BY_MODERATION。UI 加 rejected-skin（斜纹背景 + ShieldOff 图标 + 60% 透明度），与 spec-ui-design §7.3 一致。DG-m2.3 决策推迟：requireEmailVerification 在 m3 上线前决策。
 
-**MAS-4 成本透明达成（2026-04-25）**：lib/ai/cost.ts 成本计算（SiliconFlow DeepSeek-V3 ¥4/M 输入 · ¥8/M 输出，单位：分）+ estimateCostFen（基于 charCount 粗估）+ POST /api/tasks 支持 402 cost confirm 流 + costGuardFn（Inngest 函数监听 task/cost.check，超 1.5× 估算上限 → PAUSED_COST）+ proofread-run verify 循环追踪实际 token 费用 + 上传页费用确认对话框（amber 警告卡片）+ 任务状态页 PAUSED_COST UI（PauseCircle 图标）。E2E 验证：手动设 costEstimatedCents=3，发 costActualFen=10 事件，cost-guard 正确将任务置为 PAUSED_COST ✓。
+**MAS-4 成本透明（2026-04-25 更新为字数计费）**：原 token 计费 + cost-guard 已于 2026-04-25 变更为**按书稿字数固定计费（¥3/千字）**。用户结算走 `ceil(charCount/1000) × 300 fen`，精确固定（errorMarginPct = 0）。内部保留 token 级成本监控（`computeInternalCostFen` + `recordApiCall`），仅运营方参考。cost-guard 整体关闭（`costGuardFn` 删除、`COST_GUARD_MULTIPLIER` 移除、`PAUSED_COST` 退化为纯状态无守卫）。规约 6 份同步更新（PRD / 架构 / 数据库 / 用户故事 / UI / 编码）。
 
 **m2 全部 4 个 MAS 达成（2026-04-25）**：MAS-1 基座 ✓ · MAS-2 参考为准绳 ✓ · MAS-3 拒绝显式 ✓ · MAS-4 成本透明 ✓
 
@@ -83,7 +83,7 @@ v1.0-m3 上线前闭环  ███████████░░░░░  70%  
 
 ## v1.0-m2 校对主流程
 
-**判据**：在真实 Neon + 真实 DeepSeek 上，能把一份 ≥ 5000 字测试书稿（复用 `origin/260319-幺弟解惑` 为黄金集）跑通三维度报告，UI 可展示；cost-guard 在人为设 0.01 美元预算时触发暂停。
+**判据**：在真实 Neon + 真实 DeepSeek 上，能把一份 ≥ 5000 字测试书稿（复用 `origin/260319-幺弟解惑` 为黄金集）跑通三维度报告，UI 可展示；字数费用预估精确显示（`ceil(字数/1000) × ¥3`），运行中不追加。
 
 ### 依赖图（拓扑排序）
 

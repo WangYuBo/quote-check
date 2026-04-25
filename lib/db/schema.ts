@@ -1,7 +1,7 @@
 /**
  * Drizzle schema for quote-check v1.0
  * - 7 核心业务实体（cog.md）
- * - 4 辅助表（result_reference_hit / report_snapshot / audit_log / user_agreement_acceptance）
+ * - 5 辅助表（result_reference_hit / report_snapshot / audit_log / user_agreement_acceptance / api_call）
  * - 3 Better Auth 表（session / account / verification）
  * - 1 版本登记表（prompt_version，ADR-012）
  *
@@ -317,6 +317,8 @@ export const task = pgTable(
       .notNull(),
     costEstimatedCents: integer('cost_estimated_cents'),
     costActualCents: integer('cost_actual_cents'),
+    costEstimatedFen: integer('cost_estimated_fen'),
+    costActualFen: integer('cost_actual_fen'),
     costCeilingCents: integer('cost_ceiling_cents'),
     costConfirmedAt: timestamp('cost_confirmed_at', { withTimezone: true }),
     costConfirmedBy: uuid('cost_confirmed_by').references(() => user.id),
@@ -329,6 +331,7 @@ export const task = pgTable(
       promptVersions: { extract: string; verify: string; map: string };
       sourceRefsHash: string;
       confidenceAlgoVersion: string;
+      userPricingVersion: string;
       frozenAt: string;
     }>(),
     versionStampFrozenAt: timestamp('version_stamp_frozen_at', { withTimezone: true }),
@@ -459,6 +462,7 @@ export const reportSnapshot = pgTable(
         promptVersions: { extract: string; verify: string; map: string };
         sourceRefsHash: string;
         confidenceAlgoVersion: string;
+        userPricingVersion: string;
       }>()
       .notNull(),
     resultsAggregate: jsonb('results_aggregate')
@@ -537,6 +541,30 @@ export const promptVersion = pgTable(
   },
   (t) => ({
     sha256Idx: index('idx_prompt_sha256').on(t.sha256),
+  }),
+);
+
+export const apiCall = pgTable(
+  'api_call',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => task.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    modelId: text('model_id').notNull(),
+    pricingVersion: text('pricing_version').notNull(),
+    promptTokens: integer('prompt_tokens').notNull(),
+    completionTokens: integer('completion_tokens').notNull(),
+    costFen: integer('cost_fen').notNull(),                       // 内部成本（分），仅 cost-guard 用，非用户结算
+    phase: text('phase').notNull(),
+    calledAt: timestamp('called_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byTask: index('idx_api_call_task').on(t.taskId, t.calledAt),
+    byUserMonth: index('idx_api_call_user_month').on(t.userId, t.calledAt),
   }),
 );
 
@@ -619,4 +647,9 @@ export const resultReferenceHitRelations = relations(resultReferenceHit, ({ one 
 
 export const reportSnapshotRelations = relations(reportSnapshot, ({ one }) => ({
   task: one(task, { fields: [reportSnapshot.taskId], references: [task.id] }),
+}));
+
+export const apiCallRelations = relations(apiCall, ({ one }) => ({
+  task: one(task, { fields: [apiCall.taskId], references: [task.id] }),
+  user: one(user, { fields: [apiCall.userId], references: [user.id] }),
 }));
