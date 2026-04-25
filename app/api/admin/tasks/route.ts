@@ -11,6 +11,13 @@ export const GET = withAdminAuth(async (_admin, req) => {
   const to = url.searchParams.get('to') ?? undefined;
   const page = Number(url.searchParams.get('page') ?? '1');
 
-  const result = await listAllTasks({ status, q, from, to, page, pageSize: 20 });
-  return NextResponse.json(result);
+  try {
+    const result = await listAllTasks({ status, q, from, to, page, pageSize: 20 });
+    return NextResponse.json(result);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    );
+  }
 });
