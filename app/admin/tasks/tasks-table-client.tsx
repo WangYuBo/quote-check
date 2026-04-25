@@ -3,8 +3,18 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
 
 interface TaskItem {
   id: string;
@@ -40,10 +50,14 @@ export function TasksTableClient() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [items, setItems] = useState<TaskItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<TaskItem | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -52,6 +66,8 @@ export function TasksTableClient() {
       const params = new URLSearchParams({ page: String(page), pageSize: '20' });
       if (search) params.set('q', search);
       if (status) params.set('status', status);
+      if (dateFrom) params.set('from', dateFrom);
+      if (dateTo) params.set('to', dateTo);
       const res = await fetch(`/api/admin/tasks?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -62,9 +78,28 @@ export function TasksTableClient() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, status]);
+  }, [page, search, status, dateFrom, dateTo]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  async function handleCancel() {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/admin/tasks/${cancelTarget.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      if (!res.ok) throw new Error('取消失败');
+      setCancelTarget(null);
+      fetchData();
+    } catch {
+      // error handled by fetchData re-run
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   if (error) {
     return (
@@ -87,7 +122,19 @@ export function TasksTableClient() {
               placeholder="搜索任务 ID..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="h-8 w-[180px]"
+              className="h-8 w-[160px]"
+            />
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+              className="h-8 rounded-md border bg-transparent px-2 text-xs"
+            />
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+              className="h-8 rounded-md border bg-transparent px-2 text-xs"
             />
             <select
               value={status}
@@ -113,13 +160,14 @@ export function TasksTableClient() {
               <TableHead>费用(元)</TableHead>
               <TableHead>创建时间</TableHead>
               <TableHead>完成时间</TableHead>
+              <TableHead>操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={7} className="h-24 text-center">加载中...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="h-24 text-center">加载中...</TableCell></TableRow>
             ) : items.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="h-24 text-center text-sm text-[hsl(var(--shadcn-muted-foreground))]">暂无数据</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="h-24 text-center text-sm text-[hsl(var(--shadcn-muted-foreground))]">暂无数据</TableCell></TableRow>
             ) : items.map((t) => (
               <TableRow key={t.id}>
                 <TableCell className="font-mono text-xs">{t.displayId}</TableCell>
@@ -136,6 +184,15 @@ export function TasksTableClient() {
                 </TableCell>
                 <TableCell className="text-xs text-[hsl(var(--shadcn-muted-foreground))]">
                   {t.completedAt?.slice(0, 16).replace('T', ' ') ?? '-'}
+                </TableCell>
+                <TableCell>
+                  {t.status === 'CANCELED' || t.status === 'COMPLETED' || t.status === 'FAILED' ? (
+                    <span className="text-xs text-[hsl(var(--shadcn-muted-foreground))]">-</span>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={() => setCancelTarget(t)}>
+                      取消
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -154,6 +211,24 @@ export function TasksTableClient() {
           </div>
         )}
       </CardContent>
+      <Dialog open={cancelTarget !== null} onOpenChange={(open) => { if (!open) setCancelTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认取消任务</DialogTitle>
+            <DialogDescription>
+              确定要取消任务 <span className="font-mono">{cancelTarget?.displayId}</span> 吗？此操作不可撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={cancelling}>返回</Button>
+            </DialogClose>
+            <Button variant="destructive" onClick={handleCancel} disabled={cancelling}>
+              {cancelling ? '处理中...' : '确认取消'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

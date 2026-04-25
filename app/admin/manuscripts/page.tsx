@@ -13,6 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ManuscriptActionsClient } from './manuscript-actions-client';
 
 interface PageProps {
   searchParams: Promise<{
@@ -74,13 +75,25 @@ async function ManuscriptsTable({
                 name="q"
                 placeholder="搜索 ID/文件名..."
                 defaultValue={q}
-                className="h-8 w-[200px]"
+                className="h-8 w-[160px]"
+              />
+              <input
+                type="date"
+                name="from"
+                defaultValue={from}
+                className="h-8 rounded-md border bg-transparent px-2 text-xs"
+              />
+              <input
+                type="date"
+                name="to"
+                defaultValue={to}
+                className="h-8 rounded-md border bg-transparent px-2 text-xs"
               />
               <button
                 type="submit"
                 className="h-8 rounded-md border px-3 text-xs hover:bg-[hsl(var(--shadcn-accent))]"
               >
-                搜索
+                筛选
               </button>
             </form>
           </div>
@@ -96,12 +109,13 @@ async function ManuscriptsTable({
               <TableHead>字数</TableHead>
               <TableHead>状态</TableHead>
               <TableHead>上传时间</TableHead>
+              <TableHead>操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {items.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-sm text-[hsl(var(--shadcn-muted-foreground))]">
+                <TableCell colSpan={7} className="h-24 text-center text-sm text-[hsl(var(--shadcn-muted-foreground))]">
                   暂无数据
                 </TableCell>
               </TableRow>
@@ -124,6 +138,11 @@ async function ManuscriptsTable({
                 <TableCell className="text-xs text-[hsl(var(--shadcn-muted-foreground))]">
                   {m.createdAt.slice(0, 16).replace('T', ' ')}
                 </TableCell>
+                <TableCell>
+                  <ManuscriptActionsClient
+                    manuscript={{ id: m.id, displayId: m.displayId, destroyedAt: m.destroyedAt }}
+                  />
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -137,7 +156,7 @@ async function ManuscriptsTable({
             <div className="flex gap-2">
               {page > 1 && (
                 <a
-                  href={`/admin/manuscripts?page=${page - 1}${q ? `&q=${q}` : ''}`}
+                  href={`/admin/manuscripts?page=${page - 1}${q ? `&q=${q}` : ''}${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}`}
                   className="h-8 rounded-md border px-3 text-xs inline-flex items-center hover:bg-[hsl(var(--shadcn-accent))]"
                 >
                   上一页
@@ -145,7 +164,7 @@ async function ManuscriptsTable({
               )}
               {page * 20 < total && (
                 <a
-                  href={`/admin/manuscripts?page=${page + 1}${q ? `&q=${q}` : ''}`}
+                  href={`/admin/manuscripts?page=${page + 1}${q ? `&q=${q}` : ''}${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}`}
                   className="h-8 rounded-md border px-3 text-xs inline-flex items-center hover:bg-[hsl(var(--shadcn-accent))]"
                 >
                   下一页

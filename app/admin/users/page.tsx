@@ -13,6 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import { UserActionsClient } from './user-actions-client';
 
 interface PageProps {
   searchParams: Promise<{
@@ -96,12 +97,13 @@ async function UsersTable({
               <TableHead>状态</TableHead>
               <TableHead>任务数</TableHead>
               <TableHead>注册时间</TableHead>
+              <TableHead>操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {items.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-sm text-[hsl(var(--shadcn-muted-foreground))]">
+                <TableCell colSpan={7} className="h-24 text-center text-sm text-[hsl(var(--shadcn-muted-foreground))]">
                   暂无数据
                 </TableCell>
               </TableRow>
@@ -123,6 +125,9 @@ async function UsersTable({
                 <TableCell>{u.taskCount}</TableCell>
                 <TableCell className="text-xs text-[hsl(var(--shadcn-muted-foreground))]">
                   {u.createdAt?.slice(0, 10)}
+                </TableCell>
+                <TableCell>
+                  <UserActionsClient user={{ id: u.id, role: u.role, suspendedAt: u.suspendedAt }} />
                 </TableCell>
               </TableRow>
             ))}

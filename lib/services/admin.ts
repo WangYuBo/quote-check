@@ -11,6 +11,8 @@ import {
   user,
   task,
   manuscript,
+  paragraph,
+  quote,
   auditLog,
   apiCall,
   type TaskStatus,
@@ -418,6 +420,14 @@ export async function listManuscripts(filter: ManuscriptFilter = {}): Promise<{
   }));
 
   return { items, total: totalResult[0]?.count ?? 0 };
+}
+
+export async function destroyManuscript(id: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.update(manuscript).set({ destroyedAt: new Date() }).where(eq(manuscript.id, id));
+    await tx.update(paragraph).set({ destroyedAt: new Date() }).where(eq(paragraph.manuscriptId, id));
+    await tx.update(quote).set({ destroyedAt: new Date() }).where(eq(quote.manuscriptId, id));
+  });
 }
 
 /* ─────────────────────────────────────────────────
