@@ -5,6 +5,9 @@
 # Dependencies
 node_modules/
 
+# Chat 会话日志（可能包含终端输出的凭据）
+chats/
+
 # Environment (保留 .env.example；真实密钥仅存本地 .env / .env.local)
 .env
 .env.local
