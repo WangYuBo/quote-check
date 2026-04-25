@@ -33,7 +33,7 @@ export default function NavBar() {
     <nav className="sticky top-0 z-50 border-b border-(--color-border) bg-(--color-bg)/95 backdrop-blur-sm">
       <div className="mx-auto flex h-12 max-w-5xl items-center justify-between px-6">
         <Link href="/" className="text-sm font-semibold text-(--color-fg) no-underline">
-          引用核查
+          青豆校对
         </Link>
 
         <div className="flex items-center gap-3">
