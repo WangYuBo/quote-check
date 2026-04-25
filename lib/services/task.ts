@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import { paragraph, quote, reference, reportSnapshot, resultReferenceHit, task, verificationResult } from '@/lib/db/schema';
@@ -20,6 +20,9 @@ export async function createTask(values: {
   userId: string;
   manuscriptId: string;
   referenceIds?: string[];
+  costEstimatedCents?: number;
+  costCeilingCents?: number;
+  costConfirmedAt?: Date;
 }): Promise<Task> {
   const [row] = await db
     .insert(task)
@@ -29,12 +32,34 @@ export async function createTask(values: {
       referenceIds: values.referenceIds ?? [],
       displayId: `T-${shortId()}`,
       status: 'PENDING_PARSE',
+      ...(values.costEstimatedCents !== undefined && { costEstimatedCents: values.costEstimatedCents }),
+      ...(values.costCeilingCents !== undefined && { costCeilingCents: values.costCeilingCents }),
+      ...(values.costConfirmedAt !== undefined && {
+        costConfirmedAt: values.costConfirmedAt,
+        costConfirmedBy: values.userId,
+      }),
       // TTL 默认 30 天（MAS-6 将由 cron 清理）
       ttlExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     })
     .returning();
   if (!row) throw new Error('task insert failed');
   return row;
+}
+
+/** 原子累加实际费用（分），并发安全（DB 层 += ） */
+export async function updateTaskCost(taskId: string, additionalFen: number): Promise<void> {
+  await db
+    .update(task)
+    .set({ costActualCents: sql`COALESCE(${task.costActualCents}, 0) + ${additionalFen}` })
+    .where(eq(task.id, taskId));
+}
+
+/** 确认成本并记录（AWAITING_CONFIRM → 可发 Inngest） */
+export async function confirmTaskCost(taskId: string, confirmedBy: string): Promise<void> {
+  await db
+    .update(task)
+    .set({ costConfirmedAt: new Date(), costConfirmedBy: confirmedBy })
+    .where(eq(task.id, taskId));
 }
 
 export async function getTask(id: string): Promise<Task | undefined> {

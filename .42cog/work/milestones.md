@@ -56,6 +56,10 @@ updated: 2026-04-20
 
 ## 已完成（🟢）
 
+- `2026-04-25` | M | 🟢 | **v1.0-m2 校对主流程达成** — MAS-1~4 全部完成，m2 判据满足 | roadmap-v1.0.md
+
+- `2026-04-25` | F | 🟢 | **MAS-4 成本透明** — lib/ai/cost.ts + costGuardFn（Inngest 费用守卫）+ proofread-run token 费用追踪 + POST /api/tasks 402 confirm 流 + 上传页费用确认对话框 + PAUSED_COST UI。E2E：cost-guard 在 costActual=10 > 3×1.5=4.5 时正确暂停任务 ✓ | `lib/ai/cost.ts` · `inngest/functions/cost-guard.ts` · `app/upload/page.tsx`
+
 - `2026-04-25` | F | 🟢 | **MAS-3 拒绝显式**：moderation-gate 真实 probe call（前 3 段 ≤600 字）+ `isModerationRejection()` 签名 A/B 双覆盖 + `REJECTED_BY_MODERATION` 独立 UI（rejected-skin 斜纹 + ShieldOff 图标 + 60% 不透明） | `inngest/functions/proofread-run.ts` · `app/tasks/[id]/page.tsx`
 
 - `2026-04-24` | F | 🟢 | **MAS-2 参考为准绳**：references 上传 API（POST/GET `/api/references`，copyrightDeclared 强制）+ `reference_paragraph` 表 + GIN trigram 索引 I-03 + `pg_trgm` 段落级检索（rawSql 绕 drizzle array 序列化坑）+ `stripForTrigram()` 去标点归一化 + 四态 matchStatus（MATCH/PARTIAL_MATCH/NOT_MATCH/NOT_FOUND_IN_REF）+ `result_reference_hit` M:N 填充（pg_trgm + hit=true/false + snippet + similarity）+ upload 页三阶段扩展 + reports 页命中区块；E2E 验证：论语 referenceId `088e7520`，《论语》引文 PARTIAL_MATCH similarity=0.647 hit=true pg_trgm ✓，其余两引文 NOT_FOUND_IN_REF ✓；typecheck ✓ lint ✓ | `app/api/references/route.ts` `lib/services/reference.ts` `lib/ai/retrieval.ts` `lib/text/normalize.ts`(stripForTrigram) `lib/db/schema.ts`(referenceParagraph) `inngest/functions/proofread-run.ts` `lib/services/task.ts`(saveReferenceHits) `app/upload/page.tsx` `app/reports/[taskId]/page.tsx`

@@ -9,6 +9,7 @@ import {
   SIMILARITY_PARTIAL_THRESHOLD,
   computeConfidence,
 } from '@/lib/ai/confidence';
+import { computeCostFen } from '@/lib/ai/cost';
 import { isModerationRejection } from '@/lib/ai/moderation';
 import { retrievePassagesForQuote } from '@/lib/ai/retrieval';
 import { PROMPT_VERSION, loadPromptRaw } from '@/lib/ai/prompts';
@@ -17,10 +18,12 @@ import { listUserReferences } from '@/lib/services/reference';
 import {
   createReportSnapshot,
   getReport,
+  getTask,
   getTaskContext,
   saveQuotes,
   saveReferenceHits,
   saveVerificationResult,
+  updateTaskCost,
   updateTaskProgress,
   updateTaskStatus,
 } from '@/lib/services/task';
@@ -187,7 +190,7 @@ export const proofreadRunFn = inngest.createFunction(
       // 拼装书稿文本（[段落N] 格式）
       const manuscriptText = ctx.paragraphs.map((p) => `[段落${p.seq}]\n${p.text}`).join('\n\n');
 
-      const { text: rawOutput } = await generateText({
+      const { text: rawOutput, usage: extractUsage } = await generateText({
         model: defaultModel,
         ...DEFAULT_GENERATION_OPTIONS,
         messages: [
@@ -195,6 +198,12 @@ export const proofreadRunFn = inngest.createFunction(
           { role: 'user', content: manuscriptText },
         ],
       });
+
+      // 追踪 extract 阶段费用
+      await updateTaskCost(
+        ctx.taskId,
+        computeCostFen(extractUsage.promptTokens, extractUsage.completionTokens),
+      );
 
       // 提取 JSON（LLM 可能含 markdown 代码块）
       const jsonMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -313,7 +322,7 @@ export const proofreadRunFn = inngest.createFunction(
           .filter(Boolean)
           .join('\n');
 
-        const { text: rawOutput } = await generateText({
+        const { text: rawOutput, usage: verifyUsage } = await generateText({
           model: defaultModel,
           ...DEFAULT_GENERATION_OPTIONS,
           messages: [
@@ -321,6 +330,12 @@ export const proofreadRunFn = inngest.createFunction(
             { role: 'user', content: userMsg },
           ],
         });
+
+        // 追踪 verify 阶段费用
+        await updateTaskCost(
+          ctx.taskId,
+          computeCostFen(verifyUsage.promptTokens, verifyUsage.completionTokens),
+        );
 
         // 多策略 JSON 提取：① 代码块 ② 纯 JSON 起始位置 ③ 全文
         let verifyResult: z.infer<typeof VerifyOutputSchema> | null = null;
@@ -453,6 +468,20 @@ export const proofreadRunFn = inngest.createFunction(
 
       verifiedCount++;
       await updateTaskProgress(taskId, { verifiedQuotes: verifiedCount });
+
+      // MAS-4: 发费用守卫检查事件，成本超限时 cost-guard 会将任务置为 PAUSED_COST
+      const currentTask = await getTask(taskId);
+      const costActualFen = currentTask?.costActualCents ?? 0;
+      await step.sendEvent(`cost-check-${q.id}`, {
+        name: 'task/cost.check',
+        data: { taskId, costActualFen },
+      });
+
+      // 如果 cost-guard 已暂停任务，提前退出循环
+      if (currentTask?.status === 'PAUSED_COST') {
+        logger.warn({ taskId, costActualFen, verifiedCount }, '[proofread-run] 费用超限，任务已暂停');
+        return { ok: true, taskId, paused: true, verifiedCount };
+      }
     }
 
     // ─── S5: freeze-report ────────────────────────────────────────────

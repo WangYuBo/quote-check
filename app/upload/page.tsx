@@ -31,6 +31,12 @@ export default function UploadPage() {
   const [manuscriptId, setManuscriptId] = useState<string | null>(null);
   const [refs, setRefs] = useState<RefItem[]>([]);
   const [copyrightDeclared, setCopyrightDeclared] = useState(false);
+  const [costConfirmPending, setCostConfirmPending] = useState<{
+    quoteCountEstimate: number;
+    estimatedDisplay: string;
+    errorMarginPct: number;
+    thresholdDisplay: string;
+  } | null>(null);
 
   function validateFile(file: File): string | null {
     const ext = file.name.match(/\.[^.]+$/)?.[0]?.toLowerCase() ?? '';
@@ -110,7 +116,7 @@ export default function UploadPage() {
     setRefs((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  async function handleStart() {
+  async function doCreateTask(costConfirmed = false) {
     if (!manuscriptId) return;
     setStatus('creating');
 
@@ -121,13 +127,39 @@ export default function UploadPage() {
     const res = await fetch('/api/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ manuscriptId, referenceIds: uploadedRefIds }),
+      body: JSON.stringify({ manuscriptId, referenceIds: uploadedRefIds, costConfirmed }),
     });
-    const data = (await res.json()) as { taskId?: string; error?: string };
 
+    if (res.status === 402) {
+      // 费用超限，需要确认
+      const data = (await res.json()) as {
+        requiresConfirm: boolean;
+        estimate: {
+          quoteCountEstimate: number;
+          estimatedDisplay: string;
+          errorMarginPct: number;
+          thresholdDisplay: string;
+        };
+      };
+      setCostConfirmPending(data.estimate);
+      setStatus('idle');
+      return;
+    }
+
+    const data = (await res.json()) as { taskId?: string; error?: string };
     if (!res.ok) { setErrorMsg(data.error ?? '创建任务失败'); setStatus('error'); return; }
 
     router.push(`/tasks/${data.taskId}`);
+  }
+
+  async function handleStart() {
+    setCostConfirmPending(null);
+    await doCreateTask(false);
+  }
+
+  async function handleConfirmCost() {
+    setCostConfirmPending(null);
+    await doCreateTask(true);
   }
 
   const pendingRefs = refs.filter((r) => !r.referenceId && !r.uploading);
@@ -296,7 +328,40 @@ export default function UploadPage() {
           <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-2">{errorMsg}</p>
         )}
 
-        {preview && manuscriptId && (
+        {/* 费用确认对话框 */}
+        {costConfirmPending && (
+          <div className="border border-amber-200 bg-amber-50 rounded-xl p-5 space-y-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-amber-800">本次核查预估费用较高</p>
+              <p className="text-sm text-amber-700">
+                预估引文数：约 {costConfirmPending.quoteCountEstimate} 条 ·
+                费用：{costConfirmPending.estimatedDisplay}（±{costConfirmPending.errorMarginPct}%）
+              </p>
+              <p className="text-xs text-amber-600">
+                单次超过 {costConfirmPending.thresholdDisplay} 需要手动确认。
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => void handleConfirmCost()}
+                disabled={status === 'creating'}
+                className="flex-1 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
+              >
+                {status === 'creating' ? '发起中…' : '确认，开始核查'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCostConfirmPending(null)}
+                className="px-4 py-2 rounded-lg border border-amber-300 text-amber-700 text-sm hover:bg-amber-100"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        )}
+
+        {preview && manuscriptId && !costConfirmPending && (
           <button
             type="button"
             disabled={status === 'creating'}
