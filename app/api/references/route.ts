@@ -82,18 +82,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let url = `local://references/${Date.now()}-${file.name}`;
-  let pathname = url;
-  const blobToken = process.env['BLOB_READ_WRITE_TOKEN'] ?? '';
-  if (!blobToken.includes('placeholder') && process.env['NODE_ENV'] !== 'development') {
-    try {
-      const uploaded = await uploadReferenceBlob(file.name, buffer, mimeType);
-      url = uploaded.url;
-      pathname = uploaded.pathname;
-    } catch (err) {
-      console.warn('[references] Blob 上传失败，已降级到 local://', err);
-    }
-  }
+  const { url, pathname } = await uploadReferenceBlob(file.name, buffer, mimeType);
 
   const ref = await createReference({
     userId: session.user.id,

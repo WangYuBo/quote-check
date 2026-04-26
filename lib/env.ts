@@ -12,22 +12,26 @@ const envSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z.string().url(),
   SILICONFLOW_API_KEY: z.string().min(20),
-  BLOB_READ_WRITE_TOKEN: z.string().min(20),
   INNGEST_EVENT_KEY: z.string().min(10),
   INNGEST_SIGNING_KEY: z.string().min(10),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
-  COST_CAP_CNY: z.coerce.number().positive().default(50), // real.md #6
-  TTL_DAYS: z.coerce.number().int().positive().default(7), // real.md #3
+  COST_CAP_CNY: z.coerce.number().positive().default(50),
+  TTL_DAYS: z.coerce.number().int().positive().default(7),
   DEMO_MODE: z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
-  XORPAY_AID: z.string().optional(),              // xorpay 商户 ID，MOCK_PAYMENT=true 时可不填
-  XORPAY_APP_SECRET: z.string().optional(),       // xorpay 密钥，MOCK_PAYMENT=true 时可不填
+  XORPAY_AID: z.string().optional(),
+  XORPAY_APP_SECRET: z.string().optional(),
   MOCK_PAYMENT: z
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  COS_SECRET_ID: z.string().min(1),
+  COS_SECRET_KEY: z.string().min(1),
+  COS_BUCKET_REGION: z.string().min(1),
+  COS_BUCKET: z.string().min(1),
+  SITE_DOMAIN: z.string().url(),
 });
 
 type Env = z.infer<typeof envSchema>;
@@ -46,12 +50,16 @@ function parseEnv(): Env {
       BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-chars-long',
       BETTER_AUTH_URL: 'http://localhost:3000',
       SILICONFLOW_API_KEY: 'sk-test-placeholder-xxxxxxxxxxxxxxxxxxx',
-      BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test_placeholder_xxxxxx',
       INNGEST_EVENT_KEY: 'test-event-key',
       INNGEST_SIGNING_KEY: 'signkey-test',
       XORPAY_AID: 'test',
       XORPAY_APP_SECRET: 'test-secret',
       MOCK_PAYMENT: 'true',
+      COS_SECRET_ID: 'test-cos-secret-id',
+      COS_SECRET_KEY: 'test-cos-secret-key',
+      COS_BUCKET_REGION: 'ap-guangzhou',
+      COS_BUCKET: 'test-bucket',
+      SITE_DOMAIN: 'http://localhost:3000',
       ...process.env,
       NODE_ENV: 'test',
     });

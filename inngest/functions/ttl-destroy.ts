@@ -46,8 +46,8 @@ export const ttlDestroyFn = inngest.createFunction(
           .where(eq(manuscript.id, t.manuscriptId))
           .then((rows) => rows[0]);
 
-        if (msRow?.blobUrl && !msRow.blobUrl.startsWith('local://')) {
-          try { await deleteBlobByUrl(msRow.blobUrl); } catch { /* 已删或 placeholder */ }
+        if (msRow?.blobUrl) {
+          try { await deleteBlobByUrl(msRow.blobUrl); } catch { /* 已删或不存在 */ }
         }
 
         // 2. 删此书稿关联的参考文件 Blob（通过 task.referenceIds）
@@ -64,7 +64,7 @@ export const ttlDestroyFn = inngest.createFunction(
             .where(and(isNull(reference.deletedAt)));
 
           for (const ref of refs) {
-            if (ref.blobUrl && !ref.blobUrl.startsWith('local://')) {
+            if (ref.blobUrl) {
               try { await deleteBlobByUrl(ref.blobUrl); } catch { /* 忽略 */ }
             }
           }

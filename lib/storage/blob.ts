@@ -1,12 +1,25 @@
-import { del, put } from '@vercel/blob';
+import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+
+import { cosClient } from './cos';
+import { env } from '@/lib/env';
+
+const BUCKET = env.COS_BUCKET;
 
 async function uploadToBlob(
   path: string,
   buffer: Buffer,
   mimeType: string,
 ): Promise<{ url: string; pathname: string }> {
-  const blob = await put(path, buffer, { access: 'private' as 'public', contentType: mimeType });
-  return { url: blob.url, pathname: blob.pathname };
+  await cosClient.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: path,
+      Body: buffer,
+      ContentType: mimeType,
+    }),
+  );
+  const url = `https://${BUCKET}.cos.${env.COS_BUCKET_REGION}.myqcloud.com/${path}`;
+  return { url, pathname: path };
 }
 
 export async function uploadManuscriptBlob(
@@ -26,5 +39,7 @@ export async function uploadReferenceBlob(
 }
 
 export async function deleteBlobByUrl(url: string): Promise<void> {
-  await del(url);
+  const key = url.split('.myqcloud.com/')[1];
+  if (!key) return;
+  await cosClient.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
 }

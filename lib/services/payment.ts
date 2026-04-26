@@ -3,13 +3,11 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { paymentOrder, task } from '@/lib/db/schema';
 import type { PaymentOrder } from '@/lib/db/types';
+import { env } from '@/lib/env';
 import { getPaymentGateway } from '@/lib/payment';
 import { createTask, updateTaskStatus } from './task';
 
-const vercelUrl = process.env['VERCEL_URL'];
-const PAY_NOTIFY_URL = vercelUrl
-  ? `https://${vercelUrl}/api/payment/webhook`
-  : 'http://localhost:3000/api/payment/webhook';
+const PAY_NOTIFY_URL = `${env.SITE_DOMAIN}/api/payment/webhook`;
 
 /** 创建任务 + 支付订单，返回 QR 码 */
 export async function createPaymentOrder(params: {

@@ -56,19 +56,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2. 上传到 Vercel Blob（本地开发 / token 无效时跳过，失败时降级到 local://）
-  let url = `local://manuscripts/${Date.now()}-${file.name}`;
-  let pathname = url;
-  const blobToken = process.env['BLOB_READ_WRITE_TOKEN'] ?? '';
-  if (!blobToken.includes('placeholder') && process.env['NODE_ENV'] !== 'development') {
-    try {
-      const uploaded = await uploadManuscriptBlob(file.name, buffer, mimeType);
-      url = uploaded.url;
-      pathname = uploaded.pathname;
-    } catch (err) {
-      console.warn('[manuscripts] Blob 上传失败，已降级到 local://', err);
-    }
-  }
+  // 2. 上传到 COS
+  const { url, pathname } = await uploadManuscriptBlob(file.name, buffer, mimeType);
 
   // 3. 落库 manuscript
   const doc = await createManuscript({
