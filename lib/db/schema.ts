@@ -61,6 +61,7 @@ export const TASK_STATUS_VALUES = [
   'PARSING',
   'PENDING_ESTIMATE',
   'AWAITING_CONFIRM',
+  'PENDING_PAYMENT',
   'VERIFYING',
   'PAUSED_COST',
   'REJECTED_BY_MODERATION',
@@ -626,6 +627,7 @@ export const taskRelations = relations(task, ({ one, many }) => ({
     fields: [task.id],
     references: [reportSnapshot.taskId],
   }),
+  paymentOrders: many(paymentOrder),
 }));
 
 export const verificationResultRelations = relations(verificationResult, ({ one, many }) => ({
@@ -652,4 +654,41 @@ export const reportSnapshotRelations = relations(reportSnapshot, ({ one }) => ({
 export const apiCallRelations = relations(apiCall, ({ one }) => ({
   task: one(task, { fields: [apiCall.taskId], references: [task.id] }),
   user: one(user, { fields: [apiCall.userId], references: [user.id] }),
+}));
+
+/* ─────────────────────────────────────────────────
+ * Payment
+ * ───────────────────────────────────────────────── */
+
+export const paymentOrder = pgTable(
+  'payment_order',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => task.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    amountFen: integer('amount_fen').notNull(),                    // 支付金额（分）
+    gateway: varchar('gateway', { length: 32 }).notNull().default('xorpay'),
+    gatewayOrderId: varchar('gateway_order_id', { length: 128 }),  // xorpay 侧订单号 aoid
+    gatewayQrCode: text('gateway_qr_code'),                        // 二维码链接
+    paymentMethod: varchar('payment_method', { length: 16 }).notNull().default('wechat'),
+    status: varchar('status', { length: 32 }).notNull().default('pending'),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    taskIdx: index('idx_payment_task').on(t.taskId),
+    userIdx: index('idx_payment_user').on(t.userId),
+    gatewayOrderIdx: index('idx_payment_gateway_order').on(t.gatewayOrderId),
+  }),
+);
+
+export const paymentOrderRelations = relations(paymentOrder, ({ one }) => ({
+  task: one(task, { fields: [paymentOrder.taskId], references: [task.id] }),
+  user: one(user, { fields: [paymentOrder.userId], references: [user.id] }),
 }));

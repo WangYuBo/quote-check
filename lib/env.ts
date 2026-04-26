@@ -22,6 +22,12 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  XORPAY_AID: z.string().optional(),              // xorpay 商户 ID，MOCK_PAYMENT=true 时可不填
+  XORPAY_APP_SECRET: z.string().optional(),       // xorpay 密钥，MOCK_PAYMENT=true 时可不填
+  MOCK_PAYMENT: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
 });
 
 type Env = z.infer<typeof envSchema>;
@@ -43,6 +49,9 @@ function parseEnv(): Env {
       BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test_placeholder_xxxxxx',
       INNGEST_EVENT_KEY: 'test-event-key',
       INNGEST_SIGNING_KEY: 'signkey-test',
+      XORPAY_AID: 'test',
+      XORPAY_APP_SECRET: 'test-secret',
+      MOCK_PAYMENT: 'true',
       ...process.env,
       NODE_ENV: 'test',
     });

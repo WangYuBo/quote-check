@@ -57,7 +57,7 @@ export default function UploadPage() {
   const refInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [refDragging, setRefDragging] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'uploading' | 'creating' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'uploading' | 'creating' | 'paying' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [preview, setPreview] = useState<{
     filename: string;
@@ -67,13 +67,13 @@ export default function UploadPage() {
   const [manuscriptId, setManuscriptId] = useState<string | null>(null);
   const [refs, setRefs] = useState<RefItem[]>([]);
   const [copyrightDeclared, setCopyrightDeclared] = useState(false);
-  const [costConfirmPending, setCostConfirmPending] = useState<{
-    charCount: number;
-    kiloChars: number;
-    unitPrice: string;
-    estimatedDisplay: string;
-  } | null>(null);
   const [currentStep, setCurrentStep] = useState<Step>(1);
+
+  // 支付相关状态
+  const [payStep, setPayStep] = useState<'idle' | 'waiting' | 'paid' | 'expired'>('idle');
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
+  const [createdTaskId, setCreatedTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     authClient
@@ -181,49 +181,73 @@ export default function UploadPage() {
     setCurrentStep(3);
   }
 
-  async function doCreateTask(costConfirmed = false) {
+  /** 用户点击"微信支付" → 创建支付订单 + 显示二维码 */
+  async function handlePay() {
     if (!manuscriptId) return;
-    setStatus('creating');
+    setStatus('paying');
+    setErrorMsg('');
 
     const uploadedRefIds = refs
       .filter((r) => r.referenceId !== null)
       .map((r) => r.referenceId as string);
 
-    const res = await fetch('/api/tasks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ manuscriptId, referenceIds: uploadedRefIds, costConfirmed }),
-    });
+    try {
+      const res = await fetch('/api/payment/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manuscriptId, referenceIds: uploadedRefIds }),
+      });
 
-    if (res.status === 402) {
-      const data = (await res.json()) as {
-        requiresConfirm: boolean;
-        estimate: {
-          charCount: number;
-          kiloChars: number;
-          unitPrice: string;
-          estimatedDisplay: string;
-        };
-      };
-      setCostConfirmPending(data.estimate);
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMsg(data.error ?? '创建支付订单失败');
+        setStatus('error');
+        return;
+      }
+
+      setQrCode(data.qrCode);
+      setPaymentOrderId(data.paymentOrderId);
+      setCreatedTaskId(data.taskId);
+      setPayStep('waiting');
       setStatus('idle');
-      return;
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '网络错误');
+      setStatus('error');
     }
-
-    const data = (await res.json()) as { taskId?: string; error?: string };
-    if (!res.ok) { setErrorMsg(data.error ?? '创建任务失败'); setStatus('error'); return; }
-
-    router.push(`/tasks/${data.taskId}`);
   }
 
-  async function handleStart() {
-    setCostConfirmPending(null);
-    await doCreateTask(false);
-  }
+  /** 轮询支付状态 */
+  useEffect(() => {
+    if (payStep !== 'waiting' || !paymentOrderId) return;
 
-  async function handleConfirmCost() {
-    setCostConfirmPending(null);
-    await doCreateTask(true);
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/payment/status?id=${encodeURIComponent(paymentOrderId)}`);
+        const data = await res.json();
+        if (data.status === 'paid' && createdTaskId) {
+          setPayStep('paid');
+          clearInterval(timer);
+          setTimeout(() => router.push(`/tasks/${createdTaskId}`), 800);
+        } else if (data.status === 'expired') {
+          setPayStep('expired');
+          clearInterval(timer);
+        }
+      } catch {
+        // 静默重试
+      }
+    }, 2000);
+
+    return () => clearInterval(timer);
+  }, [payStep, paymentOrderId, createdTaskId, router]);
+
+  /** 二维码过期 → 重新支付 */
+  function handleRetry() {
+    setPayStep('idle');
+    setQrCode(null);
+    setPaymentOrderId(null);
+    setCreatedTaskId(null);
+    setStatus('idle');
+    setErrorMsg('');
   }
 
   const pendingRefs = refs.filter((r) => !r.referenceId && !r.uploading);
@@ -461,12 +485,12 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* Step 3: 开始核查 */}
-        {currentStep === 3 && !costConfirmPending && (
+        {/* Step 3: 支付 + 开始核查 */}
+        {currentStep === 3 && payStep === 'idle' && (
           <div className="rounded-xl border border-(--color-border) bg-(--color-card) p-8 space-y-6">
             <div className="flex items-center gap-3">
               <div className="w-7 h-7 rounded-full bg-(--color-primary) text-(--color-primary-fg) flex items-center justify-center text-xs font-medium">3</div>
-              <h2 className="text-lg font-medium text-(--color-fg)">确认并开始</h2>
+              <h2 className="text-lg font-medium text-(--color-fg)">确认并支付</h2>
             </div>
 
             {preview && (
@@ -484,7 +508,7 @@ export default function UploadPage() {
                   <span className="text-sm font-medium text-(--color-fg)">{refs.filter((r) => r.referenceId).length} 份</span>
                 </div>
                 <div className="px-5 py-4 flex items-center justify-between">
-                  <span className="text-sm text-(--color-fg-muted)">预估费用</span>
+                  <span className="text-sm text-(--color-fg-muted)">费用</span>
                   <span className="text-sm font-medium text-(--color-fg)">
                     {preview.charCount.toLocaleString()} 字 × ¥3/千字 = 约 ¥{Math.max(1, Math.ceil(preview.charCount / 1000) * 3).toFixed(2)}
                   </span>
@@ -506,57 +530,95 @@ export default function UploadPage() {
               </button>
               <button
                 type="button"
-                disabled={status === 'creating'}
-                onClick={() => void handleStart()}
-                className="px-6 py-2.5 rounded-xl bg-(--color-primary) text-(--color-primary-fg) font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+                disabled={status === 'paying'}
+                onClick={() => void handlePay()}
+                className="inline-flex items-center gap-2 rounded-xl bg-[oklch(0.55_0.15_145)] px-6 py-2.5 text-sm font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-50"
               >
-                {status === 'creating' ? '正在发起…' : '开始引用核查'}
+                {status === 'paying' ? (
+                  <>处理中…</>
+                ) : (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <rect x="2" y="6" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M2 10h20" stroke="currentColor" strokeWidth="1.5"/>
+                      <circle cx="18" cy="14" r="1.5" fill="currentColor"/>
+                    </svg>
+                    微信支付 ¥{preview ? Math.max(1, Math.ceil(preview.charCount / 1000) * 3).toFixed(2) : '0.00'}
+                  </>
+                )}
               </button>
             </div>
           </div>
         )}
 
-        {/* 费用确认对话框 */}
-        {costConfirmPending && (
+        {/* 支付等待：展示二维码 */}
+        {payStep === 'waiting' && qrCode && preview && (
           <div className="rounded-xl border border-(--color-border) bg-(--color-card) p-8 space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="w-7 h-7 rounded-full bg-(--color-primary) text-(--color-primary-fg) flex items-center justify-center text-xs font-medium">3</div>
-              <h2 className="text-lg font-medium text-(--color-fg)">确认并开始</h2>
+            <div className="text-center space-y-4">
+              <div className="w-7 h-7 rounded-full bg-(--color-primary) text-(--color-primary-fg) flex items-center justify-center text-xs font-medium mx-auto">3</div>
+              <h2 className="text-lg font-medium text-(--color-fg)">请使用微信扫码支付</h2>
             </div>
 
-            <div className="rounded-xl bg-(--color-bg) border border-(--color-border) px-5 py-6 text-center space-y-2">
-              <p className="text-lg font-semibold text-(--color-fg) font-[family-name:var(--font-serif)]">
-                {costConfirmPending.charCount.toLocaleString()} 字（{costConfirmPending.kiloChars} 千字）× {costConfirmPending.unitPrice}
+            <div className="flex justify-center">
+              <div className="rounded-xl border border-(--color-border) bg-white p-4 shadow-sm">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={qrCode}
+                  alt="微信支付二维码"
+                  className="h-52 w-52"
+                />
+              </div>
+            </div>
+
+            <div className="text-center space-y-1">
+              <p className="text-base font-semibold text-(--color-fg)">
+                ¥{Math.max(1, Math.ceil(preview.charCount / 1000) * 3).toFixed(2)}
               </p>
-              <p className="text-2xl font-bold text-(--color-fg)">{costConfirmPending.estimatedDisplay}</p>
-              <p className="text-sm text-(--color-fg-muted)">点击"确认，开始核查"即表示同意此费用。</p>
+              <p className="text-sm text-(--color-fg-muted)">二维码有效期为 2 小时，请尽快支付</p>
+              <p className="text-sm text-(--color-fg-muted)">支付成功后自动开始核查</p>
             </div>
 
-            <div className="flex items-center justify-between pt-2">
+            <div className="flex justify-center pt-2">
+              <div className="h-1.5 w-1.5 rounded-full bg-(--color-primary) animate-pulse" />
+            </div>
+          </div>
+        )}
+
+        {/* 支付成功过渡 */}
+        {payStep === 'paid' && (
+          <div className="rounded-xl border border-(--color-border) bg-(--color-card) p-8 space-y-6">
+            <div className="text-center py-8 space-y-4">
+              <div className="w-14 h-14 rounded-full bg-[oklch(0.55_0.15_145)] text-white flex items-center justify-center mx-auto">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+              <h2 className="text-lg font-medium text-(--color-fg)">支付成功</h2>
+              <p className="text-sm text-(--color-fg-muted)">正在跳转到任务页面…</p>
+            </div>
+          </div>
+        )}
+
+        {/* 二维码过期 */}
+        {payStep === 'expired' && (
+          <div className="rounded-xl border border-(--color-border) bg-(--color-card) p-8 space-y-6">
+            <div className="text-center py-8 space-y-4">
+              <div className="w-14 h-14 rounded-full bg-red-100 text-red-500 flex items-center justify-center mx-auto">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="15" y1="9" x2="9" y2="15" />
+                  <line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+              </div>
+              <h2 className="text-lg font-medium text-(--color-fg)">二维码已过期</h2>
+              <p className="text-sm text-(--color-fg-muted)">请重新生成二维码进行支付</p>
               <button
                 type="button"
-                onClick={() => setCostConfirmPending(null)}
-                className="text-sm text-(--color-fg-muted) hover:text-(--color-fg) transition-colors"
+                onClick={handleRetry}
+                className="inline-flex items-center gap-2 rounded-xl bg-(--color-primary) px-6 py-2.5 text-sm font-medium text-(--color-primary-fg) hover:opacity-90 transition-opacity"
               >
-                ← 返回上一步
+                重新支付
               </button>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setCostConfirmPending(null)}
-                  className="px-4 py-2 rounded-lg border border-(--color-border) text-(--color-fg-muted) text-sm hover:bg-(--color-bg) transition-colors"
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleConfirmCost()}
-                  disabled={status === 'creating'}
-                  className="px-6 py-2.5 rounded-xl bg-(--color-primary) text-(--color-primary-fg) font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-50"
-                >
-                  {status === 'creating' ? '发起中…' : '确认，开始核查'}
-                </button>
-              </div>
             </div>
           </div>
         )}

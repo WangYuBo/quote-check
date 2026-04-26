@@ -10,6 +10,7 @@ import type {
   auditLog,
   manuscript,
   paragraph,
+  paymentOrder,
   promptVersion,
   quote,
   reference,
@@ -74,3 +75,6 @@ export type NewPromptVersion = InferInsertModel<typeof promptVersion>;
 
 export type ApiCall = InferSelectModel<typeof apiCall>;
 export type NewApiCall = InferInsertModel<typeof apiCall>;
+
+export type PaymentOrder = InferSelectModel<typeof paymentOrder>;
+export type NewPaymentOrder = InferInsertModel<typeof paymentOrder>;

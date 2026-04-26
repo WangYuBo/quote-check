@@ -23,7 +23,7 @@ async function runMigrations() {
 
   try {
     const migrationsDir = path.join(process.cwd(), 'lib/db/migrations');
-    const files = ['0000_wakeful_kat_farrell.sql', '0001_solid_domino.sql', '0002_simple_luckman.sql', '0003_slippery_albert_cleary.sql'];
+    const files = ['0000_wakeful_kat_farrell.sql', '0001_solid_domino.sql', '0002_simple_luckman.sql', '0003_slippery_albert_cleary.sql', '0004_payment.sql'];
 
     for (const file of files) {
       try {
