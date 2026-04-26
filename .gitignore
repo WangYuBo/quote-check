@@ -4,6 +4,7 @@
 
 # Dependencies
 node_modules/
+package-lock.json
 
 # Chat 会话日志（可能包含终端输出的凭据）
 chats/
