@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   output: 'standalone',
-  serverExternalPackages: ['pino', 'pino-pretty', 'opencc-js'],
+  serverExternalPackages: ['pino', 'pino-pretty', 'opencc-js', 'oslo'],
   typedRoutes: true,
 };
 
