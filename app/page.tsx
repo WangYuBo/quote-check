@@ -172,7 +172,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-3xl px-6 py-20 text-center sm:py-28">
           <h2 className="font-serif text-3xl font-bold text-[var(--color-fg)] sm:text-4xl">
             开始使用<BeanDot className="mx-2 align-middle" />
-            青豆校对
+            黑猫校对
           </h2>
           <p className="mt-3 text-sm text-[var(--color-fg-muted)]">
             上传书稿，即刻开始三维度引用核查

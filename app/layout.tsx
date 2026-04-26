@@ -4,9 +4,10 @@ import './globals.css';
 
 import AgreementModal from '@/components/AgreementModal';
 import NavBar from '@/components/NavBar';
+import Footer from '@/components/Footer';
 
 export const metadata: Metadata = {
-  title: '青豆校对 · 文史类书稿三维度比对',
+  title: '黑猫校对 · 文史类书稿三维度比对',
   description: '对照原始文献，从字词、解释、语境三维度比对书稿引用。机器不判错，终审权归编辑。',
 };
 
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="min-h-screen antialiased">
         <NavBar />
         {children}
+        <Footer />
         <AgreementModal />
       </body>
     </html>
