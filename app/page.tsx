@@ -64,7 +64,7 @@ export default function HomePage() {
               文史类书稿校对工具
             </p>
             <h1 className="mt-6 font-serif text-5xl font-bold leading-[1.1] tracking-tight text-[var(--color-fg)] sm:text-6xl">
-              青豆<BeanDot />
+              黑猫<BeanDot />
               校对
             </h1>
             <p className="mt-5 text-base leading-relaxed text-[var(--color-fg-muted)] sm:text-lg">
